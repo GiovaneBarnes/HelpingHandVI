@@ -1,0 +1,3 @@
+ALTER TABLE providers ADD COLUMN plan VARCHAR(10) DEFAULT 'FREE';
+ALTER TABLE providers ADD COLUMN trial_start_at TIMESTAMP;
+ALTER TABLE providers ADD COLUMN trial_end_at TIMESTAMP;

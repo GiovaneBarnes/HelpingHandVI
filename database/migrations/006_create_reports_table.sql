@@ -1,0 +1,7 @@
+CREATE TABLE reports (
+  id SERIAL PRIMARY KEY,
+  provider_id INTEGER REFERENCES providers(id) ON DELETE CASCADE,
+  reason TEXT NOT NULL,
+  contact VARCHAR(255),
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
