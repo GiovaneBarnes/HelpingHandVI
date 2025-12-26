@@ -23,16 +23,16 @@
         <div class='clearfix'>
             
             <div class='fl pad1y space-right2'>
-                <span class="strong">42.94% </span>
+                <span class="strong">41.5% </span>
                 <span class="quiet">Statements</span>
-                <span class='fraction'>70/163</span>
+                <span class='fraction'>66/159</span>
             </div>
         
             
             <div class='fl pad1y space-right2'>
-                <span class="strong">62.16% </span>
+                <span class="strong">60% </span>
                 <span class="quiet">Branches</span>
-                <span class='fraction'>23/37</span>
+                <span class='fraction'>21/35</span>
             </div>
         
             
@@ -44,9 +44,9 @@
         
             
             <div class='fl pad1y space-right2'>
-                <span class="strong">43.2% </span>
+                <span class="strong">41.77% </span>
                 <span class="quiet">Lines</span>
-                <span class='fraction'>70/162</span>
+                <span class='fraction'>66/158</span>
             </div>
         
             
@@ -389,19 +389,7 @@
 <a name='L324'></a><a href='#L324'>324</a>
 <a name='L325'></a><a href='#L325'>325</a>
 <a name='L326'></a><a href='#L326'>326</a>
-<a name='L327'></a><a href='#L327'>327</a>
-<a name='L328'></a><a href='#L328'>328</a>
-<a name='L329'></a><a href='#L329'>329</a>
-<a name='L330'></a><a href='#L330'>330</a>
-<a name='L331'></a><a href='#L331'>331</a>
-<a name='L332'></a><a href='#L332'>332</a>
-<a name='L333'></a><a href='#L333'>333</a>
-<a name='L334'></a><a href='#L334'>334</a>
-<a name='L335'></a><a href='#L335'>335</a>
-<a name='L336'></a><a href='#L336'>336</a>
-<a name='L337'></a><a href='#L337'>337</a>
-<a name='L338'></a><a href='#L338'>338</a>
-<a name='L339'></a><a href='#L339'>339</a></td><td class="line-coverage quiet"><span class="cline-any cline-yes">1x</span>
+<a name='L327'></a><a href='#L327'>327</a></td><td class="line-coverage quiet"><span class="cline-any cline-yes">1x</span>
 <span class="cline-any cline-yes">1x</span>
 <span class="cline-any cline-yes">1x</span>
 <span class="cline-any cline-yes">1x</span>
@@ -500,10 +488,6 @@
 <span class="cline-any cline-yes">1x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-yes">4x</span>
-<span class="cline-any cline-yes">1x</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-yes">1x</span>
@@ -531,14 +515,6 @@
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-yes">4x</span>
 <span class="cline-any cline-yes">4x</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-yes">1x</span>
-<span class="cline-any cline-yes">1x</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-yes">1x</span>
 <span class="cline-any cline-yes">1x</span>
@@ -768,7 +744,7 @@ const adminAuth = <span class="fstat-no" title="function not covered" >(r</span>
 };
 &nbsp;
 app.use(cors({
-  origin: 'http://localhost:5173', // allow web app
+  origin: ['http://localhost:5173', 'http://localhost:5174'], // allow web app on common dev ports
 }));
 &nbsp;
 app.use(express.json());
@@ -779,7 +755,7 @@ app.get('/health', <span class="fstat-no" title="function not covered" >(r</span
 &nbsp;
 app.get('/providers', async (req: Request, res: Response) =&gt; {
   try {
-    const { status, island, category, activeWithinHours, limit: limitParam, cursor: cursorParam } = req.query;
+    const { status, island, category, limit: limitParam, cursor: cursorParam } = req.query;
 &nbsp;
     // Validation
     let limit = 20;
@@ -834,10 +810,6 @@ app.get('/providers', async (req: Request, res: Response) =&gt; {
 <span class="cstat-no" title="statement not covered" >      paramIndex++;</span>
     }
 &nbsp;
-    if (activeWithinHours) {
-      query += ` AND (SELECT MAX(created_at) FROM activity_events WHERE provider_id = p.id) &gt; NOW() - INTERVAL '${activeWithinHours} hours'`;
-    }
-&nbsp;
     if (cursor) {
       query += ` AND (
         score &lt; $${paramIndex} OR
@@ -870,14 +842,6 @@ app.get('/providers', async (req: Request, res: Response) =&gt; {
     let suggestions: any[] = [];
     if (providers.length === 0) {
       // Generate suggestions
-      if (activeWithinHours) {
-        suggestions.push({
-          id: 'remove_active',
-          label: 'Show all activity',
-          description: 'Remove the "recently active" filter to see more providers',
-          patch: { activeWithinHours: null }
-        });
-      }
       if (status === 'TODAY') {
         suggestions.push({
           id: 'expand_today',
@@ -1084,7 +1048,7 @@ app.get('/admin/reports', adminAuth, <span class="fstat-no" title="function not 
             <div class='footer quiet pad2 space-top1 center small'>
                 Code coverage generated by
                 <a href="https://istanbul.js.org/" target="_blank" rel="noopener noreferrer">istanbul</a>
-                at 2025-12-26T00:29:49.509Z
+                at 2025-12-26T00:58:15.047Z
             </div>
         <script src="prettify.js"></script>
         <script>

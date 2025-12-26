@@ -38,7 +38,7 @@ app.get('/health', (req: Request, res: Response) => {
 
 app.get('/providers', async (req: Request, res: Response) => {
   try {
-    const { status, island, category, activeWithinHours, limit: limitParam, cursor: cursorParam } = req.query;
+    const { status, island, category, limit: limitParam, cursor: cursorParam } = req.query;
 
     // Validation
     let limit = 20;
@@ -93,10 +93,6 @@ app.get('/providers', async (req: Request, res: Response) => {
       paramIndex++;
     }
 
-    if (activeWithinHours) {
-      query += ` AND (SELECT MAX(created_at) FROM activity_events WHERE provider_id = p.id) > NOW() - INTERVAL '${activeWithinHours} hours'`;
-    }
-
     if (cursor) {
       query += ` AND (
         score < $${paramIndex} OR
@@ -129,14 +125,6 @@ app.get('/providers', async (req: Request, res: Response) => {
     let suggestions: any[] = [];
     if (providers.length === 0) {
       // Generate suggestions
-      if (activeWithinHours) {
-        suggestions.push({
-          id: 'remove_active',
-          label: 'Show all activity',
-          description: 'Remove the "recently active" filter to see more providers',
-          patch: { activeWithinHours: null }
-        });
-      }
       if (status === 'TODAY') {
         suggestions.push({
           id: 'expand_today',

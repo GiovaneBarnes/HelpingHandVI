@@ -75,7 +75,7 @@ describe('GET /providers', () => {
   it('should generate suggestions when no results', async () => {
     (mockPool.query as jest.Mock).mockResolvedValue({ rows: [] });
 
-    const response = await request(app).get('/providers?activeWithinHours=24&status=TODAY&island=St.+Thomas');
+    const response = await request(app).get('/providers?status=TODAY&island=St.+Thomas');
 
     expect(response.status).toBe(200);
     expect(response.body.data.providers).toHaveLength(0);

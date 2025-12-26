@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<coverage generated="1766708990839" clover="3.2.0">
-  <project timestamp="1766708990839" name="All files">
-    <metrics statements="1131" coveredstatements="14" conditionals="15" coveredconditionals="1" methods="15" coveredmethods="1" elements="1161" coveredelements="16" complexity="0" loc="1131" ncloc="1131" packages="4" files="15" classes="15"/>
+<coverage generated="1766710696458" clover="3.2.0">
+  <project timestamp="1766710696458" name="All files">
+    <metrics statements="1122" coveredstatements="14" conditionals="15" coveredconditionals="1" methods="15" coveredmethods="1" elements="1152" coveredelements="16" complexity="0" loc="1122" ncloc="1122" packages="4" files="15" classes="15"/>
     <package name="web">
       <metrics statements="17" coveredstatements="0" conditionals="2" coveredconditionals="0" methods="2" coveredmethods="0"/>
       <file name="postcss.config.js" path="/Users/giovanebarnes/dev/HelpingHand/apps/web/postcss.config.js">
@@ -75,7 +75,7 @@
       </file>
     </package>
     <package name="web.src.components">
-      <metrics statements="82" coveredstatements="14" conditionals="4" coveredconditionals="1" methods="4" coveredmethods="1"/>
+      <metrics statements="83" coveredstatements="14" conditionals="4" coveredconditionals="1" methods="4" coveredmethods="1"/>
       <file name="Badge.tsx" path="/Users/giovanebarnes/dev/HelpingHand/apps/web/src/components/Badge.tsx">
         <metrics statements="22" coveredstatements="0" conditionals="1" coveredconditionals="0" methods="1" coveredmethods="0"/>
         <line num="1" count="0" type="cond" truecount="0" falsecount="1"/>
@@ -102,7 +102,7 @@
         <line num="22" count="0" type="stmt"/>
       </file>
       <file name="Button.tsx" path="/Users/giovanebarnes/dev/HelpingHand/apps/web/src/components/Button.tsx">
-        <metrics statements="32" coveredstatements="0" conditionals="1" coveredconditionals="0" methods="1" coveredmethods="0"/>
+        <metrics statements="33" coveredstatements="0" conditionals="1" coveredconditionals="0" methods="1" coveredmethods="0"/>
         <line num="1" count="0" type="cond" truecount="0" falsecount="1"/>
         <line num="2" count="0" type="stmt"/>
         <line num="3" count="0" type="stmt"/>
@@ -135,6 +135,7 @@
         <line num="30" count="0" type="stmt"/>
         <line num="31" count="0" type="stmt"/>
         <line num="32" count="0" type="stmt"/>
+        <line num="33" count="0" type="stmt"/>
       </file>
       <file name="Card.tsx" path="/Users/giovanebarnes/dev/HelpingHand/apps/web/src/components/Card.tsx">
         <metrics statements="14" coveredstatements="14" conditionals="1" coveredconditionals="1" methods="1" coveredmethods="1"/>
@@ -172,7 +173,7 @@
       </file>
     </package>
     <package name="web.src.pages">
-      <metrics statements="995" coveredstatements="0" conditionals="7" coveredconditionals="0" methods="7" coveredmethods="0"/>
+      <metrics statements="985" coveredstatements="0" conditionals="7" coveredconditionals="0" methods="7" coveredmethods="0"/>
       <file name="AdminLogin.tsx" path="/Users/giovanebarnes/dev/HelpingHand/apps/web/src/pages/AdminLogin.tsx">
         <metrics statements="52" coveredstatements="0" conditionals="1" coveredconditionals="0" methods="1" coveredmethods="0"/>
         <line num="1" count="0" type="cond" truecount="0" falsecount="1"/>
@@ -697,7 +698,7 @@
         <line num="191" count="0" type="stmt"/>
       </file>
       <file name="Home.tsx" path="/Users/giovanebarnes/dev/HelpingHand/apps/web/src/pages/Home.tsx">
-        <metrics statements="218" coveredstatements="0" conditionals="1" coveredconditionals="0" methods="1" coveredmethods="0"/>
+        <metrics statements="208" coveredstatements="0" conditionals="1" coveredconditionals="0" methods="1" coveredmethods="0"/>
         <line num="1" count="0" type="cond" truecount="0" falsecount="1"/>
         <line num="2" count="0" type="stmt"/>
         <line num="3" count="0" type="stmt"/>
@@ -906,16 +907,6 @@
         <line num="206" count="0" type="stmt"/>
         <line num="207" count="0" type="stmt"/>
         <line num="208" count="0" type="stmt"/>
-        <line num="209" count="0" type="stmt"/>
-        <line num="210" count="0" type="stmt"/>
-        <line num="211" count="0" type="stmt"/>
-        <line num="212" count="0" type="stmt"/>
-        <line num="213" count="0" type="stmt"/>
-        <line num="214" count="0" type="stmt"/>
-        <line num="215" count="0" type="stmt"/>
-        <line num="216" count="0" type="stmt"/>
-        <line num="217" count="0" type="stmt"/>
-        <line num="218" count="0" type="stmt"/>
       </file>
       <file name="Join.tsx" path="/Users/giovanebarnes/dev/HelpingHand/apps/web/src/pages/Join.tsx">
         <metrics statements="153" coveredstatements="0" conditionals="1" coveredconditionals="0" methods="1" coveredmethods="0"/>

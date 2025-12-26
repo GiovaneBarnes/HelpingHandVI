@@ -47,7 +47,6 @@ export const Home: React.FC = () => {
     island: '',
     category: '',
     availability: '',
-    activeWithinHours: '',
   });
 
   useEffect(() => {
@@ -69,7 +68,6 @@ export const Home: React.FC = () => {
       if (filters.island) params.append('island', filters.island);
       if (filters.category) params.append('category', filters.category);
       if (filters.availability) params.append('status', filters.availability);
-      if (filters.activeWithinHours) params.append('activeWithinHours', filters.activeWithinHours);
       if (!reset && cursor) params.append('cursor', cursor);
 
       const response = await fetch(`${API_BASE}/providers?${params}`);
@@ -153,14 +151,6 @@ export const Home: React.FC = () => {
           <option value="THIS_WEEK">This Week</option>
           <option value="NEXT_WEEK">Next Week</option>
         </select>
-
-        <input
-          type="number"
-          placeholder="Active within hours"
-          value={filters.activeWithinHours}
-          onChange={(e) => handleFilterChange('activeWithinHours', e.target.value)}
-          className="border rounded px-3 py-2"
-        />
       </div>
 
       {providers.length === 0 && suggestions.length > 0 && (
