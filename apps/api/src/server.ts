@@ -44,6 +44,18 @@ class ActivityService {
 
 export { ActivityService };
 
+// Premium/Trial helper functions
+export const isPremium = (provider: any): boolean => {
+  return provider.plan === 'PREMIUM' &&
+         (provider.plan_source !== 'TRIAL' || (provider.trial_end_at && new Date(provider.trial_end_at) > new Date()));
+};
+
+export const trialDaysLeft = (provider: any): number => {
+  if (!provider.trial_end_at) return 0;
+  const days = Math.ceil((new Date(provider.trial_end_at).getTime() - Date.now()) / (1000 * 60 * 60 * 24));
+  return Math.max(0, days);
+};
+
 // Audit Service for admin governance
 class AuditService {
   static async log({
@@ -147,20 +159,25 @@ app.get('/providers', async (req: Request, res: Response) => {
              CASE
                -- Verification badge weights (configurable)
                WHEN EXISTS (SELECT 1 FROM provider_badges WHERE provider_id = p.id AND badge = 'GOV_APPROVED') THEN 300
-               WHEN EXISTS (SELECT 1 FROM provider_badges WHERE provider_id = p.id AND badge = 'EMERGENCY_READY') THEN ${emergencyMode ? '400' : '200'}
+               WHEN EXISTS (SELECT 1 FROM provider_badges WHERE provider_id = p.id AND badge = 'EMERGENCY_READY') AND
+                    (p.plan = 'PREMIUM' AND (p.plan_source != 'TRIAL' OR p.trial_end_at > NOW())) THEN ${emergencyMode ? '400' : '200'}
                WHEN EXISTS (SELECT 1 FROM provider_badges WHERE provider_id = p.id AND badge = 'VERIFIED') THEN 100
                ELSE 0
              END +
-             -- Plan weights
-             CASE WHEN p.plan = 'PREMIUM' AND p.trial_end_at > NOW() THEN 50 ELSE 0 END +
+             -- Plan weights (PREMIUM > FREE)
+             CASE WHEN p.plan = 'PREMIUM' AND (p.plan_source != 'TRIAL' OR p.trial_end_at > NOW()) THEN 50 ELSE 0 END +
              -- Lifecycle status weights (ACTIVE > INACTIVE)
              CASE WHEN p.lifecycle_status = 'ACTIVE' THEN 10 ELSE 0 END +
              -- Disputed penalty (de-rank disputed providers)
              CASE WHEN p.is_disputed THEN -1000 ELSE 0 END as trust_score,
              p.lifecycle_status,
              p.is_disputed,
-             (p.plan = 'PREMIUM' AND p.trial_end_at > NOW()) as is_premium,
-             CASE WHEN p.trial_end_at > NOW() THEN CEIL(EXTRACT(EPOCH FROM (p.trial_end_at - NOW())) / 86400) ELSE 0 END as trial_days_left
+             p.plan,
+             p.plan_source,
+             p.trial_end_at,
+             (p.plan = 'PREMIUM' AND (p.plan_source != 'TRIAL' OR p.trial_end_at > NOW())) as is_premium_active,
+             CASE WHEN p.trial_end_at > NOW() THEN CEIL(EXTRACT(EPOCH FROM (p.trial_end_at - NOW())) / 86400) ELSE 0 END as trial_days_left,
+             CASE WHEN p.plan_source = 'TRIAL' AND p.trial_end_at > NOW() THEN true ELSE false END as is_trial
       FROM providers p
       WHERE p.lifecycle_status != 'ARCHIVED'
     `;
@@ -273,8 +290,12 @@ app.get('/providers/:id', async (req, res) => {
     const query = `
       SELECT p.*,
              (SELECT MAX(created_at) FROM activity_events WHERE provider_id = p.id) as last_active_at,
-             (p.plan = 'PREMIUM' AND p.trial_end_at > NOW()) as is_premium,
+             p.plan,
+             p.plan_source,
+             p.trial_end_at,
+             (p.plan = 'PREMIUM' AND (p.plan_source != 'TRIAL' OR p.trial_end_at > NOW())) as is_premium_active,
              CASE WHEN p.trial_end_at > NOW() THEN CEIL(EXTRACT(EPOCH FROM (p.trial_end_at - NOW())) / 86400) ELSE 0 END as trial_days_left,
+             CASE WHEN p.plan_source = 'TRIAL' AND p.trial_end_at > NOW() THEN true ELSE false END as is_trial,
              COALESCE(
                (SELECT json_agg(json_build_object('id', a.id, 'name', a.name, 'island', a.island))
                 FROM areas a
@@ -338,11 +359,11 @@ app.post('/providers', async (req, res) => {
       const trialEnd = new Date(trialStart.getTime() + 30 * 24 * 60 * 60 * 1000);
       const providerResult = await client.query(
         `INSERT INTO providers (
-          name, phone, whatsapp, island, plan, trial_start_at, trial_end_at,
+          name, phone, whatsapp, island, plan, plan_source, trial_start_at, trial_end_at,
           contact_call_enabled, contact_whatsapp_enabled, contact_sms_enabled,
           preferred_contact_method, typical_hours, emergency_calls_accepted
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13) RETURNING id`,
-        [name, phone, whatsapp, island, 'PREMIUM', trialStart, trialEnd,
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14) RETURNING id`,
+        [name, phone, whatsapp, island, 'PREMIUM', 'TRIAL', trialStart, trialEnd,
          contact_call_enabled, contact_whatsapp_enabled, contact_sms_enabled,
          preferred_contact_method, typical_hours, emergency_calls_accepted]
       );
@@ -364,7 +385,17 @@ app.post('/providers', async (req, res) => {
       }
 
       await client.query('COMMIT');
-      res.status(201).json({ id: providerId });
+
+      // Calculate trial days left
+      const trialDaysLeft = Math.max(0, Math.ceil((trialEnd.getTime() - Date.now()) / (1000 * 60 * 60 * 24)));
+
+      res.status(201).json({
+        id: providerId,
+        plan: 'PREMIUM',
+        plan_source: 'TRIAL',
+        trial_end_at: trialEnd.toISOString(),
+        trial_days_left: trialDaysLeft
+      });
     } catch (err) {
       await client.query('ROLLBACK');
       throw err;
@@ -696,6 +727,38 @@ app.post('/admin/jobs/recompute-provider-lifecycle', adminAuth, async (req, res)
     
     const result = await pool.query(query);
     res.json({ message: `Lifecycle recomputed for ${result.rowCount} providers` });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+app.post('/admin/jobs/expire-trials', adminAuth, async (req, res) => {
+  try {
+    // Find expired trial providers and downgrade them
+    const expiredTrialsQuery = `
+      UPDATE providers
+      SET plan = 'FREE', plan_source = 'FREE', updated_at = CURRENT_TIMESTAMP
+      WHERE plan = 'PREMIUM'
+        AND plan_source = 'TRIAL'
+        AND trial_end_at < NOW()
+    `;
+
+    const result = await pool.query(expiredTrialsQuery);
+
+    // Log audit event for governance
+    if ((result.rowCount ?? 0) > 0) {
+      await AuditService.log({
+        actionType: 'TRIAL_EXPIRED',
+        adminActor: req.adminActor!,
+        notes: `Expired ${result.rowCount} trial(s) - downgraded to FREE plan`
+      });
+    }
+
+    res.json({
+      data: { downgradedCount: result.rowCount },
+      error: null
+    });
   } catch (error) {
     console.error(error);
     res.status(500).json({ error: 'Internal server error' });

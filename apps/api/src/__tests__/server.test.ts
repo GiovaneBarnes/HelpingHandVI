@@ -488,3 +488,156 @@ describe('GET /providers with area filter', () => {
     );
   });
 });
+
+describe('POST /providers trial functionality', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    (mockPool.connect as jest.Mock).mockResolvedValue(mockClient);
+    (mockClient.query as jest.Mock).mockResolvedValue({ rows: [{ id: 1 }] });
+  });
+
+  it('should create provider with 30-day premium trial', async () => {
+    const providerData = {
+      name: 'Test Provider',
+      phone: '340-123-4567',
+      island: 'STT',
+      categories: ['Electrician'],
+      areas: [1],
+    };
+
+    const response = await request(app)
+      .post('/providers')
+      .send(providerData);
+
+    expect(response.status).toBe(201);
+    expect(response.body).toEqual({
+      id: 1,
+      plan: 'PREMIUM',
+      plan_source: 'TRIAL',
+      trial_end_at: expect.any(String),
+      trial_days_left: 30
+    });
+
+    // Verify the trial_end_at is approximately 30 days from now
+    const trialEnd = new Date(response.body.trial_end_at);
+    const now = new Date();
+    const thirtyDaysMs = 30 * 24 * 60 * 60 * 1000;
+    const diff = Math.abs(trialEnd.getTime() - (now.getTime() + thirtyDaysMs));
+    expect(diff).toBeLessThan(1000); // Within 1 second
+  });
+});
+
+describe('POST /admin/jobs/expire-trials', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    process.env.ADMIN_KEY = 'test-admin-key';
+  });
+
+  it('should expire trials and downgrade providers', async () => {
+    (mockPool.query as jest.Mock).mockResolvedValue({ rowCount: 2 });
+
+    const response = await request(app)
+      .post('/admin/jobs/expire-trials')
+      .set('x-admin-key', 'test-admin-key');
+
+    expect(response.status).toBe(200);
+    expect(response.body).toEqual({
+      data: { downgradedCount: 2 },
+      error: null
+    });
+
+    expect(mockPool.query).toHaveBeenCalledWith(
+      expect.stringContaining('UPDATE providers')
+    );
+  });
+
+  it('should be idempotent - running twice yields 0', async () => {
+    (mockPool.query as jest.Mock)
+      .mockResolvedValueOnce({ rowCount: 1 }) // First UPDATE
+      .mockResolvedValueOnce({}) // First INSERT audit log
+      .mockResolvedValueOnce({ rowCount: 0 }); // Second UPDATE
+
+    // First run
+    await request(app)
+      .post('/admin/jobs/expire-trials')
+      .set('x-admin-key', 'test-admin-key');
+
+    // Second run
+    const response = await request(app)
+      .post('/admin/jobs/expire-trials')
+      .set('x-admin-key', 'test-admin-key');
+
+    expect(response.status).toBe(200);
+    expect(response.body.data.downgradedCount).toBe(0);
+  });
+});
+
+describe('Premium ranking boost', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  it('should give premium providers ranking boost', async () => {
+    // Mock emergency mode query
+    (mockPool.query as jest.Mock)
+      .mockResolvedValueOnce({ rows: [{ value: { enabled: false } }] })
+      .mockResolvedValueOnce({ rows: [
+        {
+          id: 1,
+          name: 'Premium Provider',
+          phone: '123-456-7890',
+          whatsapp: null,
+          island: 'St. Thomas',
+          profile: {},
+          status: 'AVAILABLE',
+          last_updated_at: '2023-01-01T00:00:00Z',
+          created_at: '2023-01-01T00:00:00Z',
+          plan: 'PREMIUM',
+          trial_start_at: '2023-01-01T00:00:00Z',
+          trial_end_at: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(), // 1 day left
+          lifecycle_status: 'ACTIVE',
+          archived_at: null,
+          status_last_updated_at: '2023-01-01T00:00:00Z',
+          is_disputed: false,
+          disputed_at: null,
+          plan_source: 'TRIAL',
+          last_active_at: null,
+          trust_score: 150, // 100 base + 50 premium boost
+          is_premium_active: true,
+          trial_days_left: 1,
+          is_trial: true
+        },
+        {
+          id: 2,
+          name: 'Free Provider',
+          phone: '098-765-4321',
+          whatsapp: null,
+          island: 'St. Thomas',
+          profile: {},
+          status: 'AVAILABLE',
+          last_updated_at: '2023-01-01T00:00:00Z',
+          created_at: '2023-01-01T00:00:00Z',
+          plan: 'FREE',
+          trial_start_at: null,
+          trial_end_at: null,
+          lifecycle_status: 'ACTIVE',
+          archived_at: null,
+          status_last_updated_at: '2023-01-01T00:00:00Z',
+          is_disputed: false,
+          disputed_at: null,
+          plan_source: 'FREE',
+          last_active_at: null,
+          trust_score: 100, // 100 base, no premium boost
+          is_premium_active: false,
+          trial_days_left: 0,
+          is_trial: false
+        }
+      ] });
+
+    const response = await request(app).get('/providers');
+
+    expect(response.status).toBe(200);
+    expect(response.body.data.providers[0].name).toBe('Premium Provider'); // Should rank higher
+    expect(response.body.data.providers[1].name).toBe('Free Provider');
+  });
+});
