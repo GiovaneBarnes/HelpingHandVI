@@ -2,6 +2,10 @@
   "name": "helpinghand-monorepo",
   "private": true,
   "workspaces": ["apps/*"],
+  "scripts": {
+    "test": "pnpm --filter api test && pnpm --filter web test",
+    "test:coverage": "pnpm --filter api test:coverage && pnpm --filter web test:coverage"
+  },
   "devDependencies": {
     "@typescript-eslint/eslint-plugin": "^6.21.0",
     "@typescript-eslint/parser": "^6.21.0",

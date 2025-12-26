@@ -1,4 +1,7 @@
 import { Pool } from 'pg';
+import dotenv from 'dotenv';
+
+dotenv.config();
 
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL || 'postgresql://localhost:5432/virgin_islands_providers'
@@ -64,8 +67,8 @@ describe('GET /providers', () => {
                p.last_updated_at DESC
     `, ['TODAY']);
 
-    expect(result.rows[0].name).toBe('Provider C'); // GOV_APPROVED 300
-    expect(result.rows[1].name).toBe('Provider B'); // EMERGENCY_READY 200 + 1000 boost for TODAY
+    expect(result.rows[0].name).toBe('Provider B'); // EMERGENCY_READY 200 + 1000 boost for TODAY
+    expect(result.rows[1].name).toBe('Provider C'); // GOV_APPROVED 300
     expect(result.rows[2].name).toBe('Provider A'); // VERIFIED 100
   });
 });

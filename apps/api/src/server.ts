@@ -9,6 +9,8 @@ console.log('Starting server...');
 console.log('DATABASE_URL:', process.env.DATABASE_URL);
 
 const app = express();
+
+export { app };
 const port = process.env.PORT || 3000;
 
 const { Pool } = pg;
@@ -25,7 +27,7 @@ const adminAuth = (req: Request, res: Response, next: NextFunction) => {
 };
 
 app.use(cors({
-  origin: 'http://localhost:5173', // allow web app
+  origin: ['http://localhost:5173', 'http://localhost:5174'], // allow web app on common dev ports
 }));
 
 app.use(express.json());
@@ -36,7 +38,28 @@ app.get('/health', (req: Request, res: Response) => {
 
 app.get('/providers', async (req: Request, res: Response) => {
   try {
-    const { status, island, category, activeWithinHours } = req.query;
+    const { status, island, category, activeWithinHours, limit: limitParam, cursor: cursorParam } = req.query;
+
+    // Validation
+    let limit = 20;
+    if (limitParam) {
+      const limitNum = parseInt(limitParam as string, 10);
+      if (isNaN(limitNum) || limitNum < 1) {
+        return res.status(400).json({ error: { code: 'INVALID_LIMIT', message: 'Limit must be between 1 and 50', fieldErrors: { limit: 'Must be between 1 and 50' } } });
+      }
+      limit = Math.min(limitNum, 50);
+    }
+
+    let cursor: { score: number; last_active_at: string | null; id: number } | null = null;
+    if (cursorParam) {
+      try {
+        cursor = JSON.parse(Buffer.from(cursorParam as string, 'base64').toString());
+        if (!cursor || typeof cursor.score !== 'number' || typeof cursor.id !== 'number') throw new Error();
+      } catch {
+        return res.status(400).json({ error: { code: 'INVALID_CURSOR', message: 'Invalid cursor format', fieldErrors: { cursor: 'Invalid base64 JSON' } } });
+      }
+    }
+
     let query = `
       SELECT p.*,
              (SELECT MAX(created_at) FROM activity_events WHERE provider_id = p.id) as last_active_at,
@@ -74,12 +97,87 @@ app.get('/providers', async (req: Request, res: Response) => {
       query += ` AND (SELECT MAX(created_at) FROM activity_events WHERE provider_id = p.id) > NOW() - INTERVAL '${activeWithinHours} hours'`;
     }
 
+    if (cursor) {
+      query += ` AND (
+        score < $${paramIndex} OR
+        (score = $${paramIndex} AND (SELECT MAX(created_at) FROM activity_events WHERE provider_id = p.id) < $${paramIndex + 1}) OR
+        (score = $${paramIndex} AND (SELECT MAX(created_at) FROM activity_events WHERE provider_id = p.id) = $${paramIndex + 1} AND p.id > $${paramIndex + 2})
+      )`;
+      params.push(cursor.score, cursor.last_active_at, cursor.id);
+      paramIndex += 3;
+    }
+
     query += ` ORDER BY score DESC, 
                (SELECT MAX(created_at) FROM activity_events WHERE provider_id = p.id) DESC NULLS LAST, 
-               p.last_updated_at DESC`;
+               p.last_updated_at DESC
+               LIMIT $${paramIndex}`;
+    params.push(limit + 1); // +1 to check if more
 
     const result = await pool.query(query, params);
-    res.json(result.rows);
+    const providers = result.rows.slice(0, limit);
+    const hasMore = result.rows.length > limit;
+    let nextCursor: string | null = null;
+    if (hasMore && providers.length > 0) {
+      const last = providers[providers.length - 1];
+      nextCursor = Buffer.from(JSON.stringify({
+        score: last.score,
+        last_active_at: last.last_active_at,
+        id: last.id
+      })).toString('base64');
+    }
+
+    let suggestions: any[] = [];
+    if (providers.length === 0) {
+      // Generate suggestions
+      if (activeWithinHours) {
+        suggestions.push({
+          id: 'remove_active',
+          label: 'Show all activity',
+          description: 'Remove the "recently active" filter to see more providers',
+          patch: { activeWithinHours: null }
+        });
+      }
+      if (status === 'TODAY') {
+        suggestions.push({
+          id: 'expand_today',
+          label: 'Available next 3 days',
+          description: 'Expand availability to next 3 days',
+          patch: { status: 'NEXT_3_DAYS' }
+        });
+      } else if (status === 'NEXT_3_DAYS') {
+        suggestions.push({
+          id: 'expand_3days',
+          label: 'Available this week',
+          description: 'Expand availability to this week',
+          patch: { status: 'THIS_WEEK' }
+        });
+      } else if (status === 'THIS_WEEK') {
+        suggestions.push({
+          id: 'expand_week',
+          label: 'Available next week',
+          description: 'Expand availability to next week',
+          patch: { status: 'NEXT_WEEK' }
+        });
+      }
+      // Nearby areas: simplified, suggest removing island filter if present, or top areas
+      if (island) {
+        suggestions.push({
+          id: 'nearby_areas',
+          label: 'Check nearby islands',
+          description: 'Remove island filter to see providers on other islands',
+          patch: { island: null }
+        });
+      }
+    }
+
+    res.json({
+      data: {
+        providers,
+        nextCursor,
+        suggestions: suggestions.length > 0 ? suggestions : undefined
+      },
+      error: null
+    });
   } catch (error) {
     console.error(error);
     res.status(500).json({ error: 'Internal server error' });
@@ -234,6 +332,8 @@ app.get('/admin/reports', adminAuth, async (req, res) => {
   }
 });
 
-app.listen(port, () => {
-  console.log(`Server running on port ${port}`);
-});
+if (process.env.NODE_ENV !== 'test') {
+  app.listen(port, () => {
+    console.log(`Server running on port ${port}`);
+  });
+}

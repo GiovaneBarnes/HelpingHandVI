@@ -38,7 +38,11 @@ const getHoursAgo = (dateString: string) => {
 export const Home: React.FC = () => {
   const [providers, setProviders] = useState<Provider[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [cursor, setCursor] = useState<string | null>(null);
+  const [hasMore, setHasMore] = useState(false);
+  const [suggestions, setSuggestions] = useState<any[]>([]);
   const [filters, setFilters] = useState({
     island: '',
     category: '',
@@ -47,11 +51,18 @@ export const Home: React.FC = () => {
   });
 
   useEffect(() => {
-    fetchProviders();
+    fetchProviders(true);
   }, [filters]);
 
-  const fetchProviders = async () => {
-    setLoading(true);
+  const fetchProviders = async (reset = false) => {
+    if (reset) {
+      setLoading(true);
+      setCursor(null);
+      setHasMore(false);
+      setSuggestions([]);
+    } else {
+      setLoadingMore(true);
+    }
     setError(null);
     try {
       const params = new URLSearchParams();
@@ -59,15 +70,28 @@ export const Home: React.FC = () => {
       if (filters.category) params.append('category', filters.category);
       if (filters.availability) params.append('status', filters.availability);
       if (filters.activeWithinHours) params.append('activeWithinHours', filters.activeWithinHours);
+      if (!reset && cursor) params.append('cursor', cursor);
 
       const response = await fetch(`${API_BASE}/providers?${params}`);
       if (!response.ok) throw new Error('Failed to fetch providers');
       const data = await response.json();
-      setProviders(data);
+      if (data.error) throw new Error(data.error);
+
+      if (reset) {
+        setProviders(data.data.providers);
+      } else {
+        setProviders(prev => [...prev, ...data.data.providers]);
+      }
+      setCursor(data.data.nextCursor);
+      setHasMore(!!data.data.nextCursor);
+      if (reset && data.data.providers.length === 0) {
+        setSuggestions(data.data.suggestions || []);
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unknown error');
     } finally {
       setLoading(false);
+      setLoadingMore(false);
     }
   };
 
@@ -75,12 +99,25 @@ export const Home: React.FC = () => {
     setFilters(prev => ({ ...prev, [key]: value }));
   };
 
+  const applySuggestion = (patch: any) => {
+    const newFilters = { ...filters };
+    Object.keys(patch).forEach(key => {
+      if (patch[key] === null) {
+        newFilters[key as keyof typeof newFilters] = '';
+      } else {
+        newFilters[key as keyof typeof newFilters] = patch[key];
+      }
+    });
+    setFilters(newFilters);
+  };
+
   if (loading) return <div className="text-center py-8">Loading...</div>;
   if (error) return <div className="text-center py-8 text-red-600">Error: {error}</div>;
 
   return (
     <div className="container mx-auto px-4 py-8">
-      <h1 className="text-3xl font-bold mb-8">Find Providers</h1>
+      <h1 className="text-3xl font-bold mb-2">Find Providers</h1>
+      <p className="text-gray-600 mb-8">Your backup plan when your usual guy doesn't answer.</p>
 
       <div className="mb-8 grid grid-cols-1 md:grid-cols-4 gap-4">
         <select
@@ -126,6 +163,24 @@ export const Home: React.FC = () => {
         />
       </div>
 
+      {providers.length === 0 && suggestions.length > 0 && (
+        <div className="mb-8 p-4 bg-yellow-50 border border-yellow-200 rounded">
+          <p className="text-yellow-800 mb-4">No matches for these filters.</p>
+          <div className="space-y-2">
+            {suggestions.map(suggestion => (
+              <button
+                key={suggestion.id}
+                onClick={() => applySuggestion(suggestion.patch)}
+                className="block w-full text-left p-2 bg-white border rounded hover:bg-gray-50"
+              >
+                <strong>{suggestion.label}</strong>
+                {suggestion.description && <p className="text-sm text-gray-600">{suggestion.description}</p>}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         {providers.map(provider => (
           <Card key={provider.id} className="hover:shadow-lg transition-shadow">
@@ -150,6 +205,14 @@ export const Home: React.FC = () => {
           </Card>
         ))}
       </div>
+
+      {hasMore && (
+        <div className="text-center mt-8">
+          <Button onClick={() => fetchProviders(false)} disabled={loadingMore}>
+            {loadingMore ? 'Loading...' : 'Load More'}
+          </Button>
+        </div>
+      )}
     </div>
   );
 };

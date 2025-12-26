@@ -7,6 +7,7 @@ interface ButtonProps {
   variant?: 'primary' | 'secondary';
   className?: string;
   type?: 'button' | 'submit' | 'reset';
+  disabled?: boolean;
 }
 
 export const Button: React.FC<ButtonProps> = ({ children, onClick, href, variant = 'primary', className = '', type = 'button' }) => {

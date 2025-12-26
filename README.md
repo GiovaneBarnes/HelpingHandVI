@@ -6,7 +6,7 @@ A comprehensive provider directory application for the Virgin Islands, built as 
 
 ### For Users
 - **Browse Providers**: Search and filter providers by category, island, availability, and status
-- **Provider Details**: View detailed profiles including contact information, services, and ratings
+- **Provider Details**: View detailed profiles including contact information and services
 - **Real-time Availability**: Check provider availability status (Today, Next 3 Days, This Week, etc.)
 - **Report Listings**: Submit reports for inappropriate or outdated provider information
 
