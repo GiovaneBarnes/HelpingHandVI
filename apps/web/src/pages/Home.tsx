@@ -13,6 +13,7 @@ interface Provider {
   profile: any;
   status: string;
   last_active_at: string;
+  lifecycle_status: string;
 }
 
 const API_BASE = 'http://localhost:3000';
@@ -174,7 +175,12 @@ export const Home: React.FC = () => {
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         {providers.map(provider => (
           <Card key={provider.id} className="hover:shadow-lg transition-shadow">
-            <h2 className="text-xl font-semibold mb-2">{provider.name}</h2>
+            <div className="flex justify-between items-start mb-2">
+              <h2 className="text-xl font-semibold">{provider.name}</h2>
+              {provider.lifecycle_status === 'INACTIVE' && (
+                <Badge label="Inactive" variant="secondary" />
+              )}
+            </div>
             <p className="text-gray-600 mb-2">{provider.island}</p>
             <Badge label={provider.status} variant={getAvailabilityColor(provider.status)} className="mb-2" />
             <p className="text-sm text-gray-500 mb-4">

@@ -18,6 +18,23 @@ const pool = new Pool({
   connectionString: process.env.DATABASE_URL || 'postgresql://localhost:5432/virgin_islands_providers'
 });
 
+// Activity Service helper
+class ActivityService {
+  static async logEvent(providerId: number, eventType: string) {
+    try {
+      await pool.query(
+        'INSERT INTO activity_events (provider_id, event_type) VALUES ($1, $2)',
+        [providerId, eventType]
+      );
+    } catch (error) {
+      console.error('Failed to log activity event:', error);
+      // Don't throw - activity logging shouldn't break the main operation
+    }
+  }
+}
+
+export { ActivityService };
+
 const adminAuth = (req: Request, res: Response, next: NextFunction) => {
   const key = req.headers['x-admin-key'];
   if (key !== process.env.ADMIN_KEY) {
@@ -25,6 +42,8 @@ const adminAuth = (req: Request, res: Response, next: NextFunction) => {
   }
   next();
 };
+
+export { adminAuth };
 
 app.use(cors({
   origin: ['http://localhost:5173', 'http://localhost:5174'], // allow web app on common dev ports
@@ -50,11 +69,11 @@ app.get('/providers', async (req: Request, res: Response) => {
       limit = Math.min(limitNum, 50);
     }
 
-    let cursor: { score: number; last_active_at: string | null; id: number } | null = null;
+    let cursor: { trust_score: number; last_active_at: string | null; status_last_updated_at: string; id: number } | null = null;
     if (cursorParam) {
       try {
         cursor = JSON.parse(Buffer.from(cursorParam as string, 'base64').toString());
-        if (!cursor || typeof cursor.score !== 'number' || typeof cursor.id !== 'number') throw new Error();
+        if (!cursor || typeof cursor.trust_score !== 'number' || typeof cursor.id !== 'number') throw new Error();
       } catch {
         return res.status(400).json({ error: { code: 'INVALID_CURSOR', message: 'Invalid cursor format', fieldErrors: { cursor: 'Invalid base64 JSON' } } });
       }
@@ -64,19 +83,21 @@ app.get('/providers', async (req: Request, res: Response) => {
       SELECT p.*,
              (SELECT MAX(created_at) FROM activity_events WHERE provider_id = p.id) as last_active_at,
              CASE
-               WHEN $1 = 'TODAY' AND EXISTS (SELECT 1 FROM provider_badges WHERE provider_id = p.id AND badge = 'EMERGENCY_READY') THEN 1000
+               -- Verification badge weights (configurable)
+               WHEN EXISTS (SELECT 1 FROM provider_badges WHERE provider_id = p.id AND badge = 'GOV_APPROVED') THEN 300
+               WHEN EXISTS (SELECT 1 FROM provider_badges WHERE provider_id = p.id AND badge = 'EMERGENCY_READY') THEN 200
+               WHEN EXISTS (SELECT 1 FROM provider_badges WHERE provider_id = p.id AND badge = 'VERIFIED') THEN 100
                ELSE 0
              END +
-             CASE
-               WHEN EXISTS (SELECT 1 FROM provider_badges WHERE provider_id = p.id AND badge = 'VERIFIED') THEN 100
-               WHEN EXISTS (SELECT 1 FROM provider_badges WHERE provider_id = p.id AND badge = 'EMERGENCY_READY') THEN 200
-               WHEN EXISTS (SELECT 1 FROM provider_badges WHERE provider_id = p.id AND badge = 'GOV_APPROVED') THEN 300
-               ELSE 0
-             END as score,
+             -- Plan weights
+             CASE WHEN p.plan = 'PREMIUM' AND p.trial_end_at > NOW() THEN 50 ELSE 0 END +
+             -- Lifecycle status weights (ACTIVE > INACTIVE)
+             CASE WHEN p.lifecycle_status = 'ACTIVE' THEN 10 ELSE 0 END as trust_score,
+             p.lifecycle_status,
              (p.plan = 'PREMIUM' AND p.trial_end_at > NOW()) as is_premium,
              CASE WHEN p.trial_end_at > NOW() THEN CEIL(EXTRACT(EPOCH FROM (p.trial_end_at - NOW())) / 86400) ELSE 0 END as trial_days_left
       FROM providers p
-      WHERE p.archived = false
+      WHERE p.lifecycle_status != 'ARCHIVED'
     `;
     const params: any[] = [status];
     let paramIndex = 2;
@@ -95,17 +116,19 @@ app.get('/providers', async (req: Request, res: Response) => {
 
     if (cursor) {
       query += ` AND (
-        score < $${paramIndex} OR
-        (score = $${paramIndex} AND (SELECT MAX(created_at) FROM activity_events WHERE provider_id = p.id) < $${paramIndex + 1}) OR
-        (score = $${paramIndex} AND (SELECT MAX(created_at) FROM activity_events WHERE provider_id = p.id) = $${paramIndex + 1} AND p.id > $${paramIndex + 2})
+        trust_score < $${paramIndex} OR
+        (trust_score = $${paramIndex} AND (SELECT MAX(created_at) FROM activity_events WHERE provider_id = p.id) < $${paramIndex + 1}) OR
+        (trust_score = $${paramIndex} AND (SELECT MAX(created_at) FROM activity_events WHERE provider_id = p.id) = $${paramIndex + 1} AND p.status_last_updated_at < $${paramIndex + 2}) OR
+        (trust_score = $${paramIndex} AND (SELECT MAX(created_at) FROM activity_events WHERE provider_id = p.id) = $${paramIndex + 1} AND p.status_last_updated_at = $${paramIndex + 2} AND p.id > $${paramIndex + 3})
       )`;
-      params.push(cursor.score, cursor.last_active_at, cursor.id);
-      paramIndex += 3;
+      params.push(cursor.trust_score, cursor.last_active_at, cursor.status_last_updated_at, cursor.id);
+      paramIndex += 4;
     }
 
-    query += ` ORDER BY score DESC, 
+    query += ` ORDER BY trust_score DESC, 
                (SELECT MAX(created_at) FROM activity_events WHERE provider_id = p.id) DESC NULLS LAST, 
-               p.last_updated_at DESC
+               p.status_last_updated_at DESC,
+               p.id ASC
                LIMIT $${paramIndex}`;
     params.push(limit + 1); // +1 to check if more
 
@@ -116,8 +139,9 @@ app.get('/providers', async (req: Request, res: Response) => {
     if (hasMore && providers.length > 0) {
       const last = providers[providers.length - 1];
       nextCursor = Buffer.from(JSON.stringify({
-        score: last.score,
+        trust_score: last.trust_score,
         last_active_at: last.last_active_at,
+        status_last_updated_at: last.status_last_updated_at,
         id: last.id
       })).toString('base64');
     }
@@ -181,7 +205,7 @@ app.get('/providers/:id', async (req, res) => {
              (p.plan = 'PREMIUM' AND p.trial_end_at > NOW()) as is_premium,
              CASE WHEN p.trial_end_at > NOW() THEN CEIL(EXTRACT(EPOCH FROM (p.trial_end_at - NOW())) / 86400) ELSE 0 END as trial_days_left
       FROM providers p
-      WHERE p.id = $1 AND p.archived = false
+      WHERE p.id = $1 AND p.lifecycle_status != 'ARCHIVED'
     `;
     const result = await pool.query(query, [id]);
     if (result.rows.length === 0) {
@@ -265,6 +289,7 @@ app.put('/providers/:id', async (req, res) => {
       }
 
       await client.query('COMMIT');
+      await ActivityService.logEvent(parseInt(id), 'PROFILE_UPDATED');
       res.json({ message: 'Updated' });
     } catch (err) {
       await client.query('ROLLBACK');
@@ -283,6 +308,7 @@ app.put('/providers/:id/status', async (req, res) => {
     const { id } = req.params;
     const { status } = req.body;
     await pool.query('UPDATE providers SET status = $1, last_updated_at = CURRENT_TIMESTAMP WHERE id = $2', [status, id]);
+    await ActivityService.logEvent(parseInt(id), 'STATUS_UPDATED');
     res.json({ message: 'Status updated' });
   } catch (error) {
     console.error(error);
@@ -298,6 +324,105 @@ app.post('/reports', async (req, res) => {
       [provider_id, reason, contact]
     );
     res.status(201).json({ message: 'Report submitted' });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+app.get('/admin/providers', adminAuth, async (req, res) => {
+  try {
+    const query = `
+      SELECT p.*,
+             (SELECT MAX(created_at) FROM activity_events WHERE provider_id = p.id) as last_active_at,
+             (p.plan = 'PREMIUM' AND p.trial_end_at > NOW()) as is_premium,
+             CASE WHEN p.trial_end_at > NOW() THEN CEIL(EXTRACT(EPOCH FROM (p.trial_end_at - NOW())) / 86400) ELSE 0 END as trial_days_left
+      FROM providers p
+      ORDER BY p.created_at DESC
+    `;
+    const result = await pool.query(query);
+    res.json(result.rows);
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+app.put('/admin/providers/:id/verify', adminAuth, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { verified } = req.body;
+    
+    if (verified) {
+      // Add VERIFIED badge if not already present
+      await pool.query(`
+        INSERT INTO provider_badges (provider_id, badge) 
+        VALUES ($1, 'VERIFIED') 
+        ON CONFLICT (provider_id, badge) DO NOTHING
+      `, [id]);
+    } else {
+      // Remove VERIFIED badge
+      await pool.query(`
+        DELETE FROM provider_badges 
+        WHERE provider_id = $1 AND badge = 'VERIFIED'
+      `, [id]);
+    }
+    
+    await pool.query('UPDATE providers SET status_last_updated_at = CURRENT_TIMESTAMP WHERE id = $1', [id]);
+    await ActivityService.logEvent(parseInt(id), 'VERIFIED');
+    res.json({ message: 'Provider verification updated' });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+app.put('/admin/providers/:id/archive', adminAuth, async (req, res) => {
+  try {
+    const { id } = req.params;
+    await pool.query("UPDATE providers SET lifecycle_status = 'ARCHIVED', status_last_updated_at = CURRENT_TIMESTAMP WHERE id = $1", [id]);
+    await ActivityService.logEvent(parseInt(id), 'ARCHIVED');
+    res.json({ message: 'Provider archived' });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+app.post('/admin/jobs/recompute-provider-lifecycle', adminAuth, async (req, res) => {
+  try {
+    // Recompute lifecycle status based on activity patterns
+    const query = `
+      WITH provider_activity AS (
+        SELECT
+          p.id,
+          MAX(ae.created_at) as last_activity,
+          COUNT(ae.id) as activity_count,
+          COUNT(r.id) as report_count
+        FROM providers p
+        LEFT JOIN activity_events ae ON p.id = ae.provider_id
+        LEFT JOIN reports r ON p.id = r.provider_id
+        GROUP BY p.id
+      ),
+      lifecycle_updates AS (
+        SELECT
+          pa.id,
+          CASE
+            WHEN pa.last_activity >= NOW() - INTERVAL '30 days' THEN 'ACTIVE'::lifecycle_status
+            WHEN pa.last_activity >= NOW() - INTERVAL '90 days' THEN 'INACTIVE'::lifecycle_status
+            WHEN pa.report_count > 0 THEN 'ARCHIVED'::lifecycle_status
+            ELSE 'ARCHIVED'::lifecycle_status
+          END as new_status
+        FROM provider_activity pa
+      )
+      UPDATE providers
+      SET lifecycle_status = lu.new_status, status_last_updated_at = CURRENT_TIMESTAMP
+      FROM lifecycle_updates lu
+      WHERE providers.id = lu.id AND providers.lifecycle_status != lu.new_status
+    `;
+    
+    const result = await pool.query(query);
+    res.json({ message: `Lifecycle recomputed for ${result.rowCount} providers` });
   } catch (error) {
     console.error(error);
     res.status(500).json({ error: 'Internal server error' });

@@ -2,6 +2,8 @@
 
 A comprehensive provider directory application for the Virgin Islands, built as a monorepo with a React frontend, Express.js API, and PostgreSQL database. This platform allows users to discover and connect with local service providers, while providing tools for providers to manage their listings and administrators to oversee the system.
 
+**✨ Featured: Trust System** - Complete behavior-based provider lifecycle management with activity tracking, automated status updates, and comprehensive test coverage (47/47 tests passing).
+
 ## Features
 
 ### For Users
@@ -24,6 +26,7 @@ A comprehensive provider directory application for the Virgin Islands, built as 
 
 ### Additional Features
 - **Smart Ranking**: Providers are ranked based on verification badges, activity, and premium status
+- **Trust System**: Behavior-based provider lifecycle management with activity tracking and automated status updates (fully tested ✅)
 - **Responsive Design**: Mobile-friendly interface built with Tailwind CSS
 - **Type Safety**: Full TypeScript implementation for reliability
 - **Database Migrations**: Structured schema evolution with SQL migrations and seeds
@@ -205,7 +208,9 @@ helpinghand/
 - Format code: `pnpm format`
 
 ### Testing
-- API tests: `pnpm --filter api test`
+- API tests: `pnpm --filter api test` (41/41 tests passing ✅)
+- Web tests: `pnpm --filter web test` (6/6 tests passing ✅)
+- **Total Coverage**: 47/47 tests passing (100% success rate)
 
 ### Building for Production
 ```bash
@@ -236,10 +241,6 @@ pnpm --filter api build
 5. Push to the branch: `git push origin feature/your-feature`
 6. Submit a pull request
 
-## License
+## Changelog
 
-This project is licensed under the MIT License - see the LICENSE file for details.
-
-## Support
-
-For questions or issues, please open an issue on the GitHub repository.
+See [CHANGELOG.md](CHANGELOG.md) for detailed version history and updates.

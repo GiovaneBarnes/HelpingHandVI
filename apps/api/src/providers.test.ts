@@ -16,12 +16,13 @@ describe('GET /providers', () => {
     await pool.query('DELETE FROM provider_categories');
     await pool.query('DELETE FROM providers');
 
-    // Insert test providers
+    // Insert test providers with lifecycle status
     await pool.query(`
-      INSERT INTO providers (id, name, phone, island, status, archived) VALUES
-      (1, 'Provider A', '123', 'St. Thomas', 'TODAY', false),
-      (2, 'Provider B', '456', 'St. John', 'THIS_WEEK', false),
-      (3, 'Provider C', '789', 'St. Croix', 'TODAY', false)
+      INSERT INTO providers (id, name, phone, island, status, archived, lifecycle_status, plan, trial_end_at) VALUES
+      (1, 'Provider A', '123', 'St. Thomas', 'TODAY', false, 'ACTIVE', 'FREE', NULL),
+      (2, 'Provider B', '456', 'St. John', 'THIS_WEEK', false, 'ACTIVE', 'PREMIUM', NOW() + INTERVAL '1 day'),
+      (3, 'Provider C', '789', 'St. Croix', 'TODAY', false, 'ACTIVE', 'FREE', NULL),
+      (4, 'Provider D', '999', 'St. Thomas', 'TODAY', false, 'ARCHIVED', 'FREE', NULL)
     `);
 
     // Badges
@@ -32,12 +33,12 @@ describe('GET /providers', () => {
       (3, 'GOV_APPROVED')
     `);
 
-    // Activity
+    // Activity events
     await pool.query(`
       INSERT INTO activity_events (provider_id, type, created_at) VALUES
-      (1, 'login', '2023-12-25 10:00:00'),
-      (2, 'login', '2023-12-25 09:00:00'),
-      (3, 'login', '2023-12-25 08:00:00')
+      (1, 'PROFILE_UPDATED', '2023-12-25 10:00:00'),
+      (2, 'STATUS_UPDATED', '2023-12-25 09:00:00'),
+      (3, 'VERIFIED', '2023-12-25 08:00:00')
     `);
   });
 
@@ -45,30 +46,43 @@ describe('GET /providers', () => {
     await pool.end();
   });
 
-  test('sorts by badge priority, then last active, then status updated', async () => {
-    // Mock the app or test the query directly
+  test('sorts by trust score: badges + plan + lifecycle', async () => {
     const result = await pool.query(`
       SELECT p.*,
              (SELECT MAX(created_at) FROM activity_events WHERE provider_id = p.id) as last_active_at,
              CASE
-               WHEN $1 = 'TODAY' AND EXISTS (SELECT 1 FROM provider_badges WHERE provider_id = p.id AND badge = 'EMERGENCY_READY') THEN 1000
+               -- Verification badge weights (configurable)
+               WHEN EXISTS (SELECT 1 FROM provider_badges WHERE provider_id = p.id AND badge = 'GOV_APPROVED') THEN 300
+               WHEN EXISTS (SELECT 1 FROM provider_badges WHERE provider_id = p.id AND badge = 'EMERGENCY_READY') THEN 200
+               WHEN EXISTS (SELECT 1 FROM provider_badges WHERE provider_id = p.id AND badge = 'VERIFIED') THEN 100
                ELSE 0
              END +
-             CASE
-               WHEN EXISTS (SELECT 1 FROM provider_badges WHERE provider_id = p.id AND badge = 'VERIFIED') THEN 100
-               WHEN EXISTS (SELECT 1 FROM provider_badges WHERE provider_id = p.id AND badge = 'EMERGENCY_READY') THEN 200
-               WHEN EXISTS (SELECT 1 FROM provider_badges WHERE provider_id = p.id AND badge = 'GOV_APPROVED') THEN 300
-               ELSE 0
-             END as score
+             -- Plan weights
+             CASE WHEN p.plan = 'PREMIUM' AND p.trial_end_at > NOW() THEN 50 ELSE 0 END +
+             -- Lifecycle status weights (ACTIVE > INACTIVE)
+             CASE WHEN p.lifecycle_status = 'ACTIVE' THEN 10 ELSE 0 END as trust_score,
+             p.lifecycle_status
       FROM providers p
-      WHERE p.archived = false
-      ORDER BY score DESC, 
-               (SELECT MAX(created_at) FROM activity_events WHERE provider_id = p.id) DESC NULLS LAST, 
-               p.last_updated_at DESC
-    `, ['TODAY']);
+      WHERE p.lifecycle_status != 'ARCHIVED'
+      ORDER BY trust_score DESC,
+               (SELECT MAX(created_at) FROM activity_events WHERE provider_id = p.id) DESC NULLS LAST,
+               p.status_last_updated_at DESC,
+               p.id ASC
+    `);
 
-    expect(result.rows[0].name).toBe('Provider B'); // EMERGENCY_READY 200 + 1000 boost for TODAY
-    expect(result.rows[1].name).toBe('Provider C'); // GOV_APPROVED 300
-    expect(result.rows[2].name).toBe('Provider A'); // VERIFIED 100
+    expect(result.rows).toHaveLength(3); // Should exclude archived provider
+    expect(result.rows[0].name).toBe('Provider C'); // GOV_APPROVED (300) + ACTIVE (10) = 310
+    expect(result.rows[1].name).toBe('Provider B'); // EMERGENCY_READY (200) + PREMIUM (50) + ACTIVE (10) = 260
+    expect(result.rows[2].name).toBe('Provider A'); // VERIFIED (100) + ACTIVE (10) = 110
+  });
+
+  test('excludes archived providers from results', async () => {
+    const result = await pool.query(`
+      SELECT COUNT(*) as count
+      FROM providers p
+      WHERE p.lifecycle_status != 'ARCHIVED'
+    `);
+
+    expect(result.rows[0].count).toBe('3');
   });
 });
