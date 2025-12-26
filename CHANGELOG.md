@@ -8,6 +8,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Minimum Viable Governance (MVG) System**: Complete admin governance with audit trails and dispute management
+  - Audit logging for all admin actions (VERIFY, ARCHIVE, UNARCHIVE, MARK_DISPUTED, UNMARK_DISPUTED, REPORT_STATUS_CHANGED, EMERGENCY_MODE_TOGGLED)
+  - Admin actor identification using key suffix for stable logging
+  - Provider dispute management with admin-only visibility
+  - Report triage workflow with NEW/IN_REVIEW/RESOLVED status management
+  - Emergency mode toggle affecting provider ranking and public homepage banner
+  - All admin actions are reversible with complete audit history
+  - Secure admin authentication with key-based access control
+
 - **Contact Preferences System**: Comprehensive provider contact management
   - Enable/disable individual contact methods (call, WhatsApp, SMS)
   - Set preferred contact method for prioritized communication
@@ -49,6 +58,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Fixed Jest configuration to prevent duplicate test execution
 
 ### Database
+- **Governance Schema**: New tables and enums for admin audit and dispute management
+  - `admin_audit_log` table for comprehensive admin action logging
+  - `admin_action_type` enum for action categorization
+  - `report_status` enum for report triage workflow (NEW/IN_REVIEW/RESOLVED)
+  - `is_disputed` column in providers table for dispute management
+  - `admin_notes` column in reports table for triage notes
+  - `app_settings` table for emergency mode configuration
+  - Migration file: `010_add_admin_governance.sql`
+
 - **Contact & Work Schema**: New columns and enums for enhanced provider profiles
   - `contact_method` enum for contact preferences
   - New columns: `enable_call`, `enable_whatsapp`, `enable_sms`, `preferred_contact`, `typical_hours`, `emergency_calls`
@@ -62,6 +80,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Migration files: `007_add_trust_system.sql`, `008_add_trust_indexes.sql`
 
 ### Features
+- **Admin Governance Dashboard**: Complete admin panel with dispute management and audit trails
+  - Provider dispute marking/unmarking with admin-only visibility
+  - Report triage workflow with status management (NEW/IN_REVIEW/RESOLVED)
+  - Emergency mode toggle affecting provider ranking and public banner
+  - Comprehensive audit log viewer for all admin actions
+  - Reversible admin actions with full accountability
+
 - **Provider Ranking**: Smart ranking based on verification badges, activity, and premium status
 - **Admin Dashboard**: Enhanced admin panel with provider lifecycle management
 - **Activity Monitoring**: Real-time tracking of provider engagement

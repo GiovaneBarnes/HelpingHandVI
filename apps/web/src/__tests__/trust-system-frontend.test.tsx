@@ -2,7 +2,6 @@ import { render, screen } from '@testing-library/react';
 import { vi } from 'vitest';
 import { Card } from '../components/Card';
 import { Badge } from '../components/Badge';
-import { Home } from '../pages/Home';
 
 // Mock the API_BASE
 vi.mock('../pages/Home', () => ({

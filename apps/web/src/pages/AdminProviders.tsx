@@ -11,6 +11,8 @@ interface Provider {
   status: string;
   archived: boolean;
   badges: string[];
+  is_disputed: boolean;
+  disputed_at: string | null;
 }
 
 const API_BASE = 'http://localhost:3000';
@@ -71,16 +73,31 @@ export const AdminProviders: React.FC = () => {
     }
   };
 
-  const handleArchive = async (id: number, archived: boolean) => {
+  const handleArchive = async (id: number) => {
     try {
       await fetch(`${API_BASE}/admin/providers/${id}/archive`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json', 'X-ADMIN-KEY': ADMIN_KEY },
-        body: JSON.stringify({ archived }),
       });
       fetchProviders();
     } catch (err) {
       alert('Error updating');
+    }
+  };
+
+  const handleDisputed = async (id: number, isDisputed: boolean) => {
+    const notes = prompt('Notes:');
+    if (notes !== null) {
+      try {
+        await fetch(`${API_BASE}/admin/providers/${id}/disputed`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json', 'X-ADMIN-KEY': ADMIN_KEY },
+          body: JSON.stringify({ isDisputed, notes }),
+        });
+        fetchProviders();
+      } catch (err) {
+        alert('Error updating disputed status');
+      }
     }
   };
 
@@ -140,6 +157,7 @@ export const AdminProviders: React.FC = () => {
               <th className="px-4 py-2 border">Status</th>
               <th className="px-4 py-2 border">Badges</th>
               <th className="px-4 py-2 border">Archived</th>
+              <th className="px-4 py-2 border">Disputed</th>
               <th className="px-4 py-2 border">Actions</th>
             </tr>
           </thead>
@@ -159,9 +177,15 @@ export const AdminProviders: React.FC = () => {
                 </td>
                 <td className="px-4 py-2 border">{provider.archived ? 'Yes' : 'No'}</td>
                 <td className="px-4 py-2 border">
+                  {provider.is_disputed && <Badge label="Disputed" variant="error" />}
+                </td>
+                <td className="px-4 py-2 border">
                   <Button onClick={() => handleVerify(provider.id)} className="mr-2">Verify</Button>
-                  <Button onClick={() => handleArchive(provider.id, !provider.archived)}>
+                  <Button onClick={() => handleArchive(provider.id)} className="mr-2">
                     {provider.archived ? 'Unarchive' : 'Archive'}
+                  </Button>
+                  <Button onClick={() => handleDisputed(provider.id, !provider.is_disputed)} variant="secondary">
+                    {provider.is_disputed ? 'Unmark Disputed' : 'Mark Disputed'}
                   </Button>
                 </td>
               </tr>

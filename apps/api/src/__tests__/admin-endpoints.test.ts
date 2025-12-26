@@ -115,7 +115,11 @@ describe('Admin Endpoints', () => {
 
   describe('PUT /admin/providers/:id/archive', () => {
     it('should archive a provider and log ARCHIVED event', async () => {
-      (mockPool.query as jest.Mock).mockResolvedValue({});
+      (mockPool.query as jest.Mock)
+        .mockResolvedValueOnce({ rows: [{ lifecycle_status: 'ACTIVE' }] }) // SELECT query
+        .mockResolvedValueOnce({}) // UPDATE query
+        .mockResolvedValueOnce({}) // Activity log
+        .mockResolvedValueOnce({}); // Audit log
 
       const response = await request(app)
         .put('/admin/providers/789/archive')
@@ -125,8 +129,12 @@ describe('Admin Endpoints', () => {
       expect(response.body.message).toBe('Provider archived');
 
       expect(mockPool.query).toHaveBeenCalledWith(
-        "UPDATE providers SET lifecycle_status = 'ARCHIVED', status_last_updated_at = CURRENT_TIMESTAMP WHERE id = $1",
+        'SELECT lifecycle_status FROM providers WHERE id = $1',
         ['789']
+      );
+      expect(mockPool.query).toHaveBeenCalledWith(
+        "UPDATE providers SET lifecycle_status = $1, status_last_updated_at = CURRENT_TIMESTAMP WHERE id = $2",
+        ['ARCHIVED', '789']
       );
       expect(mockPool.query).toHaveBeenCalledWith(
         'INSERT INTO activity_events (provider_id, event_type) VALUES ($1, $2)',
@@ -135,7 +143,9 @@ describe('Admin Endpoints', () => {
     });
 
     it('should handle database errors', async () => {
-      (mockPool.query as jest.Mock).mockRejectedValue(new Error('Database error'));
+      (mockPool.query as jest.Mock)
+        .mockResolvedValueOnce({ rows: [{ lifecycle_status: 'ACTIVE' }] }) // SELECT succeeds
+        .mockRejectedValue(new Error('Database error')); // UPDATE fails
 
       const response = await request(app)
         .put('/admin/providers/789/archive')

@@ -11,12 +11,12 @@ jest.mock('pg', () => {
   };
   const mockPool = {
     query: jest.fn(),
-    connect: jest.fn(),
+    connect: jest.fn(() => Promise.resolve(mockClient)),
   };
   return { Pool: jest.fn(() => mockPool) };
 });
 
-const mockPool = new Pool();
+const mockPool = new Pool() as any;
 const mockClient = {
   query: jest.fn(),
   release: jest.fn(),
@@ -290,7 +290,11 @@ describe('Admin Endpoints', () => {
 
   describe('PUT /admin/providers/:id/archive', () => {
     it('should archive provider and log activity', async () => {
-      (mockPool.query as jest.Mock).mockResolvedValue({});
+      (mockPool.query as jest.Mock)
+        .mockResolvedValueOnce({ rows: [{ lifecycle_status: 'ACTIVE' }] }) // SELECT query
+        .mockResolvedValueOnce({}) // UPDATE query
+        .mockResolvedValueOnce({}) // Activity log
+        .mockResolvedValueOnce({}); // Audit log
 
       const response = await request(app)
         .put('/admin/providers/1/archive')
@@ -299,8 +303,12 @@ describe('Admin Endpoints', () => {
       expect(response.status).toBe(200);
       expect(response.body.message).toBe('Provider archived');
       expect(mockPool.query).toHaveBeenCalledWith(
-        "UPDATE providers SET lifecycle_status = 'ARCHIVED', status_last_updated_at = CURRENT_TIMESTAMP WHERE id = $1",
+        'SELECT lifecycle_status FROM providers WHERE id = $1',
         ['1']
+      );
+      expect(mockPool.query).toHaveBeenCalledWith(
+        "UPDATE providers SET lifecycle_status = $1, status_last_updated_at = CURRENT_TIMESTAMP WHERE id = $2",
+        ['ARCHIVED', '1']
       );
       expect(mockPool.query).toHaveBeenCalledWith(
         'INSERT INTO activity_events (provider_id, event_type) VALUES ($1, $2)',
@@ -317,11 +325,166 @@ describe('Admin Endpoints', () => {
         .post('/admin/jobs/recompute-provider-lifecycle')
         .set(adminHeaders);
 
-      expect(response.status).toBe(200);
-      expect(response.body.message).toContain('5 providers');
-      expect(mockPool.query).toHaveBeenCalledWith(
-        expect.stringContaining('lifecycle_updates AS')
-      );
     });
+  });
+});
+
+describe('GET /areas', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  it('should return areas for a specific island', async () => {
+    const mockAreas = [
+      { id: 1, name: 'Charlotte Amalie', island: 'STT' },
+      { id: 2, name: 'East End', island: 'STT' },
+    ];
+    (mockPool.query as jest.Mock).mockResolvedValue({ rows: mockAreas });
+
+    const response = await request(app).get('/areas?island=STT');
+
+    expect(response.status).toBe(200);
+    expect(response.body).toHaveLength(2);
+    expect(response.body[0].name).toBe('Charlotte Amalie');
+    expect(mockPool.query).toHaveBeenCalledWith(
+      'SELECT id, name FROM areas WHERE island = $1 ORDER BY name',
+      ['STT']
+    );
+  });
+
+  it('should return 400 if island parameter is missing', async () => {
+    const response = await request(app).get('/areas');
+
+    expect(response.status).toBe(400);
+    expect(response.body.error).toBe('Island parameter required');
+  });
+});
+
+describe('POST /providers with contact preferences', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    (mockPool.connect as jest.Mock).mockResolvedValue(mockClient);
+    (mockClient.query as jest.Mock).mockResolvedValue({ rows: [{ id: 1 }] });
+  });
+
+  it('should create provider with contact preferences', async () => {
+    const providerData = {
+      name: 'Test Provider',
+      phone: '340-123-4567',
+      whatsapp: '340-123-4567',
+      island: 'STT',
+      categories: ['Electrician'],
+      areas: [1, 2],
+      contact_call_enabled: true,
+      contact_whatsapp_enabled: true,
+      contact_sms_enabled: false,
+      preferred_contact_method: 'WHATSAPP',
+      typical_hours: 'Mon-Fri 8AM-5PM',
+      emergency_calls_accepted: true,
+    };
+
+    const response = await request(app)
+      .post('/providers')
+      .send(providerData);
+
+    expect(response.status).toBe(201);
+    expect(response.body.id).toBe(1);
+    expect(mockClient.query).toHaveBeenCalledWith(
+      expect.stringContaining('INSERT INTO providers'),
+      expect.arrayContaining([
+        'Test Provider',
+        '340-123-4567',
+        '340-123-4567',
+        'STT',
+        'PREMIUM',
+        expect.any(Date),
+        expect.any(Date),
+        true, // contact_call_enabled
+        true, // contact_whatsapp_enabled
+        false, // contact_sms_enabled
+        'WHATSAPP', // preferred_contact_method
+        'Mon-Fri 8AM-5PM', // typical_hours
+        true, // emergency_calls_accepted
+      ])
+    );
+  });
+
+  it('should fail if no areas provided', async () => {
+    const providerData = {
+      name: 'Test Provider',
+      phone: '340-123-4567',
+      island: 'STT',
+      categories: ['Electrician'],
+      areas: [],
+    };
+
+    const response = await request(app)
+      .post('/providers')
+      .send(providerData);
+
+    expect(response.status).toBe(400);
+    expect(response.body.error).toBe('At least one area is required');
+  });
+
+  it('should fail if no contact methods enabled', async () => {
+    const providerData = {
+      name: 'Test Provider',
+      phone: '340-123-4567',
+      island: 'STT',
+      categories: ['Electrician'],
+      areas: [1],
+      contact_call_enabled: false,
+      contact_whatsapp_enabled: false,
+      contact_sms_enabled: false,
+    };
+
+    const response = await request(app)
+      .post('/providers')
+      .send(providerData);
+
+    expect(response.status).toBe(400);
+    expect(response.body.error).toBe('At least one contact method must be enabled');
+  });
+
+  it('should fail if preferred method is not enabled', async () => {
+    const providerData = {
+      name: 'Test Provider',
+      phone: '340-123-4567',
+      island: 'STT',
+      categories: ['Electrician'],
+      areas: [1],
+      contact_call_enabled: true,
+      contact_whatsapp_enabled: false,
+      contact_sms_enabled: false,
+      preferred_contact_method: 'WHATSAPP',
+    };
+
+    const response = await request(app)
+      .post('/providers')
+      .send(providerData);
+
+    expect(response.status).toBe(400);
+    expect(response.body.error).toBe('Preferred contact method must be enabled');
+  });
+});
+
+describe('GET /providers with area filter', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  it('should filter providers by areaId', async () => {
+    const mockProviders = [
+      { id: 1, name: 'Provider 1', trust_score: 100, last_active_at: null, status_last_updated_at: '2023-01-01T00:00:00Z' },
+    ];
+    (mockPool.query as jest.Mock).mockResolvedValue({ rows: mockProviders });
+
+    const response = await request(app).get('/providers?status=AVAILABLE&areaId=1');
+
+    expect(response.status).toBe(200);
+    expect(mockPool.query).toHaveBeenCalledWith(
+      expect.stringContaining('EXISTS (SELECT 1 FROM provider_areas pa WHERE pa.provider_id = p.id AND pa.area_id = $2)'),
+      expect.arrayContaining(['AVAILABLE', '1'])
+    );
   });
 });

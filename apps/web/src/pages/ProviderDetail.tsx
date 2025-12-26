@@ -13,6 +13,13 @@ interface Provider {
   profile: any;
   status: string;
   last_active_at: string;
+  contact_call_enabled: boolean;
+  contact_whatsapp_enabled: boolean;
+  contact_sms_enabled: boolean;
+  preferred_contact_method?: string;
+  typical_hours?: string;
+  emergency_calls_accepted: boolean;
+  areas: Array<{ id: number; name: string; island: string }>;
 }
 
 const API_BASE = 'http://localhost:3000';
@@ -33,6 +40,11 @@ const getHoursAgo = (dateString: string) => {
   const diffMs = now.getTime() - date.getTime();
   const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
   return diffHours;
+};
+
+const normalizePhoneNumber = (phone: string) => {
+  // Remove all non-digit characters except +
+  return phone.replace(/[^\d+]/g, '');
 };
 
 export const ProviderDetail: React.FC = () => {
@@ -90,19 +102,49 @@ export const ProviderDetail: React.FC = () => {
           <p className="text-sm text-gray-500 mb-4">
             Last active: {provider.last_active_at ? `${getHoursAgo(provider.last_active_at)} hours ago` : 'Never'}
           </p>
+          {provider.preferred_contact_method && (
+            <p className="text-sm text-gray-600 mb-4">
+              Preferred contact: {provider.preferred_contact_method}
+            </p>
+          )}
           <Button onClick={handleReport} variant="secondary" className="mb-4">Report this listing</Button>
+
+          {provider.typical_hours && (
+            <div className="mb-4">
+              <h2 className="text-xl font-semibold mb-2">Hours</h2>
+              <p>{provider.typical_hours}</p>
+              {provider.emergency_calls_accepted && (
+                <Badge label="Emergency Calls Accepted" variant="warning" className="mt-2" />
+              )}
+            </div>
+          )}
+
           <div className="mb-4">
-            <h2 className="text-xl font-semibold mb-2">Profile</h2>
-            <pre className="bg-gray-100 p-4 rounded">{JSON.stringify(provider.profile, null, 2)}</pre>
+            <h2 className="text-xl font-semibold mb-2">Service Areas</h2>
+            <div className="flex flex-wrap gap-2">
+              {provider.areas.map(area => (
+                <Badge key={area.id} label={area.name} variant="secondary" />
+              ))}
+            </div>
           </div>
-          <div className="flex space-x-4">
-            <Button href={`tel:${provider.phone}`}>Call {provider.phone}</Button>
-            <Button
-              href={provider.whatsapp ? `https://wa.me/${provider.whatsapp}` : `sms:${provider.phone}`}
-              variant="secondary"
-            >
-              {provider.whatsapp ? `WhatsApp ${provider.whatsapp}` : `SMS ${provider.phone}`}
-            </Button>
+
+          <div className="mb-4">
+            <h2 className="text-xl font-semibold mb-2">Contact</h2>
+            <div className="flex flex-wrap gap-2">
+              {provider.contact_call_enabled && (
+                <Button href={`tel:${provider.phone}`}>📞 Call</Button>
+              )}
+              {provider.contact_whatsapp_enabled && provider.whatsapp && (
+                <Button href={`https://wa.me/${normalizePhoneNumber(provider.whatsapp)}`} variant="secondary">
+                  💬 WhatsApp
+                </Button>
+              )}
+              {provider.contact_sms_enabled && (
+                <Button href={`sms:${normalizePhoneNumber(provider.phone)}`} variant="secondary">
+                  💬 SMS
+                </Button>
+              )}
+            </div>
           </div>
         </Card>
       ) : (

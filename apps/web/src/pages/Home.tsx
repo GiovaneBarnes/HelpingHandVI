@@ -48,11 +48,48 @@ export const Home: React.FC = () => {
     island: '',
     category: '',
     availability: '',
+    areaId: '',
   });
+  const [availableAreas, setAvailableAreas] = useState<Array<{ id: number; name: string }>>([]);
+  const [emergencyMode, setEmergencyMode] = useState({ enabled: false });
 
   useEffect(() => {
     fetchProviders(true);
+    fetchEmergencyMode();
   }, [filters]);
+
+  useEffect(() => {
+    if (filters.island) {
+      fetchAreas();
+    } else {
+      setAvailableAreas([]);
+      setFilters(prev => ({ ...prev, areaId: '' }));
+    }
+  }, [filters.island]);
+
+  const fetchAreas = async () => {
+    try {
+      const response = await fetch(`${API_BASE}/areas?island=${filters.island}`);
+      if (response.ok) {
+        const areas = await response.json();
+        setAvailableAreas(areas);
+      }
+    } catch (err) {
+      console.error('Failed to fetch areas');
+    }
+  };
+
+  const fetchEmergencyMode = async () => {
+    try {
+      const response = await fetch(`${API_BASE}/settings/emergency-mode`);
+      if (response.ok) {
+        const data = await response.json();
+        setEmergencyMode(data);
+      }
+    } catch (err) {
+      console.error('Failed to fetch emergency mode');
+    }
+  };
 
   const fetchProviders = async (reset = false) => {
     if (reset) {
@@ -69,6 +106,7 @@ export const Home: React.FC = () => {
       if (filters.island) params.append('island', filters.island);
       if (filters.category) params.append('category', filters.category);
       if (filters.availability) params.append('status', filters.availability);
+      if (filters.areaId) params.append('areaId', filters.areaId);
       if (!reset && cursor) params.append('cursor', cursor);
 
       const response = await fetch(`${API_BASE}/providers?${params}`);
@@ -118,16 +156,48 @@ export const Home: React.FC = () => {
       <h1 className="text-3xl font-bold mb-2">Find Providers</h1>
       <p className="text-gray-600 mb-8">Your backup plan when your usual guy doesn't answer.</p>
 
-      <div className="mb-8 grid grid-cols-1 md:grid-cols-4 gap-4">
+      {emergencyMode.enabled && (
+        <div className="mb-8 bg-yellow-50 border border-yellow-200 rounded-lg p-4">
+          <div className="flex items-center">
+            <div className="flex-shrink-0">
+              <svg className="h-5 w-5 text-yellow-400" viewBox="0 0 20 20" fill="currentColor">
+                <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+              </svg>
+            </div>
+            <div className="ml-3">
+              <h3 className="text-sm font-medium text-yellow-800">
+                High demand — response times may be limited
+              </h3>
+              <div className="mt-2 text-sm text-yellow-700">
+                <p>Confirm details directly with providers. Emergency services are prioritized.</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <div className="mb-8 grid grid-cols-1 md:grid-cols-5 gap-4">
         <select
           value={filters.island}
           onChange={(e) => handleFilterChange('island', e.target.value)}
           className="border rounded px-3 py-2"
         >
           <option value="">All Islands</option>
-          <option value="St. Thomas">St. Thomas</option>
-          <option value="St. John">St. John</option>
-          <option value="St. Croix">St. Croix</option>
+          <option value="STT">St. Thomas</option>
+          <option value="STJ">St. John</option>
+          <option value="STX">St. Croix</option>
+        </select>
+
+        <select
+          value={filters.areaId}
+          onChange={(e) => handleFilterChange('areaId', e.target.value)}
+          className="border rounded px-3 py-2"
+          disabled={!filters.island}
+        >
+          <option value="">All Areas</option>
+          {availableAreas.map(area => (
+            <option key={area.id} value={area.id}>{area.name}</option>
+          ))}
         </select>
 
         <select

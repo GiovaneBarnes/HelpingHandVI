@@ -2,7 +2,7 @@
 
 A comprehensive provider directory application for the Virgin Islands, built as a monorepo with a React frontend, Express.js API, and PostgreSQL database. This platform allows users to discover and connect with local service providers, while providing tools for providers to manage their listings and administrators to oversee the system.
 
-**✨ Featured: Trust System & Contact Preferences** - Complete behavior-based provider lifecycle management with activity tracking, automated status updates, contact preferences (call/WhatsApp/SMS), service areas filtering, and comprehensive test coverage (54/54 tests passing).
+**✨ Featured: Minimum Viable Governance (MVG) System** - Complete admin governance with audit trails, dispute management, report triage, and emergency mode. All admin actions are reversible and logged for full accountability (54/54 tests passing).
 
 ## Features
 
@@ -24,12 +24,16 @@ A comprehensive provider directory application for the Virgin Islands, built as 
 ### For Administrators
 - **Admin Panel**: Secure login with key-based authentication
 - **Provider Management**: View, verify, archive, and manage all provider listings
-- **Report Handling**: Review and manage user-submitted reports
+- **Dispute Management**: Mark/unmark providers as disputed (admin-only visibility)
+- **Report Triage**: Review and manage user-submitted reports with status workflow
+- **Emergency Mode**: Toggle emergency mode affecting provider ranking and public banner
+- **Audit Logging**: Complete audit trail of all admin actions with actor identification
 - **System Monitoring**: Access to provider statistics and system health
 
 ### Additional Features
 - **Smart Ranking**: Providers are ranked based on verification badges, activity, and premium status
 - **Trust System**: Behavior-based provider lifecycle management with activity tracking and automated status updates (fully tested ✅)
+- **Governance System**: Complete admin governance with audit trails, dispute management, and emergency mode (fully tested ✅)
 - **Responsive Design**: Mobile-friendly interface built with Tailwind CSS
 - **Type Safety**: Full TypeScript implementation for reliability
 - **Database Migrations**: Structured schema evolution with SQL migrations and seeds
@@ -133,8 +137,12 @@ helpinghand/
    cat database/migrations/002_create_tables.sql | docker exec -i postgres-db psql -U postgres -d virgin_islands_providers
    cat database/migrations/003_create_indexes.sql | docker exec -i postgres-db psql -U postgres -d virgin_islands_providers
    cat database/migrations/004_add_archived_to_providers.sql | docker exec -i postgres-db psql -U postgres -d virgin_islands_providers
-   cat database/migrations/005_add_plan_to_providers.sql | docker exec -i postgres-db psql -U postgres -d virgin_islands_providers
+   cat database/migrations/005_add_plan_to_providers.sql | docker exec -i postgres -d virgin_islands_providers
    cat database/migrations/006_create_reports_table.sql | docker exec -i postgres-db psql -U postgres -d virgin_islands_providers
+   cat database/migrations/007_add_trust_system.sql | docker exec -i postgres-db psql -U postgres -d virgin_islands_providers
+   cat database/migrations/008_add_trust_indexes.sql | docker exec -i postgres-db psql -U postgres -d virgin_islands_providers
+   cat database/migrations/009_add_contact_preferences.sql | docker exec -i postgres-db psql -U postgres -d virgin_islands_providers
+   cat database/migrations/010_add_admin_governance.sql | docker exec -i postgres-db psql -U postgres -d virgin_islands_providers
    ```
 
 3. **Seed the database:**
@@ -177,8 +185,13 @@ helpinghand/
 ### Admin Endpoints (require X-Admin-Key header)
 - `GET /admin/providers` - List all providers
 - `PUT /admin/providers/:id/verify` - Verify provider
-- `PUT /admin/providers/:id/archive` - Archive provider
-- `GET /admin/reports` - List reports
+- `PUT /admin/providers/:id/archive` - Archive/unarchive provider (toggle)
+- `PATCH /admin/providers/:id/disputed` - Mark/unmark provider as disputed
+- `GET /admin/reports` - List reports with status filtering
+- `PATCH /admin/reports/:id` - Update report status and admin notes
+- `GET /admin/emergency-mode` - Get emergency mode status
+- `PUT /admin/emergency-mode` - Toggle emergency mode
+- `GET /admin/audit-log` - View audit log (future endpoint)
 
 ### Reporting
 - `POST /reports` - Submit a report
@@ -200,8 +213,11 @@ helpinghand/
 ### For Administrators
 1. Access `/admin` and login with admin credentials
 2. Review provider listings and verify legitimate businesses
-3. Handle user reports and take appropriate actions
-4. Monitor system statistics
+3. Mark/unmark providers as disputed for admin-only visibility
+4. Triage user reports with NEW/IN_REVIEW/RESOLVED status workflow
+5. Toggle emergency mode to boost trusted provider rankings and show public banner
+6. Monitor all admin actions through comprehensive audit logging
+7. Take appropriate actions with full accountability and reversibility
 
 ## Development
 
@@ -224,16 +240,20 @@ pnpm --filter api build
 ## Database Schema
 
 ### Key Tables
-- **providers**: Main provider information
+- **providers**: Main provider information with dispute status
 - **categories**: Service categories
 - **areas**: Geographic areas (islands)
 - **badges**: Verification badges
-- **reports**: User-submitted reports
+- **reports**: User-submitted reports with status and admin notes
 - **activity_events**: Provider activity tracking
+- **admin_audit_log**: Complete audit trail of all admin actions
+- **app_settings**: Application configuration (emergency mode)
 
 ### Enums
 - **availability_status**: TODAY, NEXT_3_DAYS, THIS_WEEK, NEXT_WEEK, UNAVAILABLE
 - **verification_badge**: VERIFIED, EMERGENCY_READY, GOV_APPROVED
+- **admin_action_type**: VERIFY, ARCHIVE, UNARCHIVE, MARK_DISPUTED, UNMARK_DISPUTED, REPORT_STATUS_CHANGED, EMERGENCY_MODE_TOGGLED
+- **report_status**: NEW, IN_REVIEW, RESOLVED
 
 ## Contributing
 

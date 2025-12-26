@@ -14,7 +14,13 @@ interface Provider {
   is_premium: boolean;
   trial_days_left: number;
   categories: string[];
-  areas: { island: string; neighborhood: string }[];
+  areas: Array<{ id: number; name: string; island: string }>;
+  contact_call_enabled: boolean;
+  contact_whatsapp_enabled: boolean;
+  contact_sms_enabled: boolean;
+  preferred_contact_method?: string;
+  typical_hours?: string;
+  emergency_calls_accepted: boolean;
 }
 
 const API_BASE = 'http://localhost:3000';
@@ -42,8 +48,15 @@ export const Dashboard: React.FC = () => {
     whatsapp: '',
     island: '',
     categories: [] as string[],
-    areas: [] as { island: string; neighborhood: string }[],
+    areas: [] as number[],
+    contact_call_enabled: true,
+    contact_whatsapp_enabled: true,
+    contact_sms_enabled: true,
+    preferred_contact_method: '',
+    typical_hours: '',
+    emergency_calls_accepted: false,
   });
+  const [availableAreas, setAvailableAreas] = useState<Array<{ id: number; name: string }>>([]);
   const [status, setStatus] = useState('');
 
   useEffect(() => {
@@ -65,13 +78,34 @@ export const Dashboard: React.FC = () => {
         whatsapp: data.whatsapp || '',
         island: data.island,
         categories: [], // Would need to fetch from joins
-        areas: [], // Same
+        areas: data.areas?.map((a: any) => a.id) || [],
+        contact_call_enabled: data.contact_call_enabled ?? true,
+        contact_whatsapp_enabled: data.contact_whatsapp_enabled ?? true,
+        contact_sms_enabled: data.contact_sms_enabled ?? true,
+        preferred_contact_method: data.preferred_contact_method || '',
+        typical_hours: data.typical_hours || '',
+        emergency_calls_accepted: data.emergency_calls_accepted ?? false,
       });
       setStatus(data.status);
+      if (data.island) {
+        await fetchAreas(data.island);
+      }
     } catch (err) {
       alert('Error fetching provider');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const fetchAreas = async (island: string) => {
+    try {
+      const response = await fetch(`${API_BASE}/areas?island=${island}`);
+      if (response.ok) {
+        const areas = await response.json();
+        setAvailableAreas(areas);
+      }
+    } catch (err) {
+      console.error('Failed to fetch areas');
     }
   };
 
@@ -177,11 +211,91 @@ export const Dashboard: React.FC = () => {
                 onChange={(e) => setForm(prev => ({ ...prev, island: e.target.value }))}
                 className="w-full border rounded px-3 py-2"
               >
-                <option value="St. Thomas">St. Thomas</option>
-                <option value="St. John">St. John</option>
-                <option value="St. Croix">St. Croix</option>
+                <option value="STT">St. Thomas</option>
+                <option value="STJ">St. John</option>
+                <option value="STX">St. Croix</option>
               </select>
             </div>
+
+            <div className="mb-4">
+              <label className="block text-sm font-medium mb-1">Service Areas</label>
+              {availableAreas.map(area => (
+                <label key={area.id} className="block">
+                  <input
+                    type="checkbox"
+                    checked={form.areas.includes(area.id)}
+                    onChange={(e) => setForm(prev => ({
+                      ...prev,
+                      areas: e.target.checked
+                        ? [...prev.areas, area.id]
+                        : prev.areas.filter(id => id !== area.id),
+                    }))}
+                  /> {area.name}
+                </label>
+              ))}
+            </div>
+
+            <div className="mb-4">
+              <h3 className="text-lg font-medium mb-2">Contact Preferences</h3>
+              <div className="space-y-2">
+                <label className="block">
+                  <input
+                    type="checkbox"
+                    checked={form.contact_call_enabled}
+                    onChange={(e) => setForm(prev => ({ ...prev, contact_call_enabled: e.target.checked }))}
+                  /> Enable Call button
+                </label>
+                <label className="block">
+                  <input
+                    type="checkbox"
+                    checked={form.contact_whatsapp_enabled}
+                    onChange={(e) => setForm(prev => ({ ...prev, contact_whatsapp_enabled: e.target.checked }))}
+                  /> Enable WhatsApp button
+                </label>
+                <label className="block">
+                  <input
+                    type="checkbox"
+                    checked={form.contact_sms_enabled}
+                    onChange={(e) => setForm(prev => ({ ...prev, contact_sms_enabled: e.target.checked }))}
+                  /> Enable SMS button
+                </label>
+              </div>
+              <div className="mt-2">
+                <label className="block text-sm font-medium mb-1">Preferred Contact Method</label>
+                <select
+                  value={form.preferred_contact_method}
+                  onChange={(e) => setForm(prev => ({ ...prev, preferred_contact_method: e.target.value }))}
+                  className="w-full border rounded px-3 py-2"
+                >
+                  <option value="">None</option>
+                  {form.contact_call_enabled && <option value="CALL">Call</option>}
+                  {form.contact_whatsapp_enabled && <option value="WHATSAPP">WhatsApp</option>}
+                  {form.contact_sms_enabled && <option value="SMS">SMS</option>}
+                </select>
+              </div>
+            </div>
+
+            <div className="mb-4">
+              <h3 className="text-lg font-medium mb-2">Work Information</h3>
+              <div className="mb-2">
+                <label className="block text-sm font-medium mb-1">Typical Hours</label>
+                <input
+                  type="text"
+                  value={form.typical_hours}
+                  onChange={(e) => setForm(prev => ({ ...prev, typical_hours: e.target.value }))}
+                  placeholder="e.g., Mon-Fri 8AM-5PM, Sat 9AM-1PM"
+                  className="w-full border rounded px-3 py-2"
+                />
+              </div>
+              <label className="block">
+                <input
+                  type="checkbox"
+                  checked={form.emergency_calls_accepted}
+                  onChange={(e) => setForm(prev => ({ ...prev, emergency_calls_accepted: e.target.checked }))}
+                /> Accept emergency calls
+              </label>
+            </div>
+
             <Button onClick={handleUpdateProfile}>Save Changes</Button>
           </div>
         )}

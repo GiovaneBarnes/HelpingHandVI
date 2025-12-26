@@ -8,6 +8,15 @@ dotenv.config();
 console.log('Starting server...');
 console.log('DATABASE_URL:', process.env.DATABASE_URL);
 
+// Extend Request interface for admin actor
+declare global {
+  namespace Express {
+    interface Request {
+      adminActor?: string;
+    }
+  }
+}
+
 const app = express();
 
 export { app };
@@ -35,11 +44,43 @@ class ActivityService {
 
 export { ActivityService };
 
+// Audit Service for admin governance
+class AuditService {
+  static async log({
+    actionType,
+    adminActor,
+    providerId,
+    reportId,
+    notes
+  }: {
+    actionType: string;
+    adminActor: string;
+    providerId?: number;
+    reportId?: number;
+    notes?: string;
+  }) {
+    try {
+      await pool.query(
+        'INSERT INTO admin_audit_log (action_type, admin_actor, provider_id, report_id, notes) VALUES ($1, $2, $3, $4, $5)',
+        [actionType, adminActor, providerId || null, reportId || null, notes || null]
+      );
+    } catch (error) {
+      console.error('Failed to log audit event:', error);
+      // Don't throw - audit logging shouldn't break the main operation
+    }
+  }
+}
+
+export { AuditService };
+
+// Admin auth middleware with actor extraction
 const adminAuth = (req: Request, res: Response, next: NextFunction) => {
   const key = req.headers['x-admin-key'];
   if (key !== process.env.ADMIN_KEY) {
     return res.status(401).json({ error: 'Unauthorized' });
   }
+  // Extract admin actor from key (use last 8 chars as identifier, never store full key)
+  req.adminActor = (key as string).slice(-8);
   next();
 };
 
@@ -55,9 +96,30 @@ app.get('/health', (req: Request, res: Response) => {
   res.json({ ok: true });
 });
 
+app.get('/areas', async (req: Request, res: Response) => {
+  try {
+    const { island } = req.query;
+    if (!island || typeof island !== 'string') {
+      return res.status(400).json({ error: 'Island parameter required' });
+    }
+    const result = await pool.query(
+      'SELECT id, name FROM areas WHERE island = $1 ORDER BY name',
+      [island]
+    );
+    res.json(result.rows);
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 app.get('/providers', async (req: Request, res: Response) => {
   try {
-    const { status, island, category, limit: limitParam, cursor: cursorParam } = req.query;
+    const { status, island, category, areaId, limit: limitParam, cursor: cursorParam } = req.query;
+
+    // Check emergency mode
+    const emergencyResult = await pool.query('SELECT value FROM app_settings WHERE key = $1', ['emergency_mode']);
+    const emergencyMode = emergencyResult.rows[0]?.value?.enabled || false;
 
     // Validation
     let limit = 20;
@@ -85,15 +147,18 @@ app.get('/providers', async (req: Request, res: Response) => {
              CASE
                -- Verification badge weights (configurable)
                WHEN EXISTS (SELECT 1 FROM provider_badges WHERE provider_id = p.id AND badge = 'GOV_APPROVED') THEN 300
-               WHEN EXISTS (SELECT 1 FROM provider_badges WHERE provider_id = p.id AND badge = 'EMERGENCY_READY') THEN 200
+               WHEN EXISTS (SELECT 1 FROM provider_badges WHERE provider_id = p.id AND badge = 'EMERGENCY_READY') THEN ${emergencyMode ? '400' : '200'}
                WHEN EXISTS (SELECT 1 FROM provider_badges WHERE provider_id = p.id AND badge = 'VERIFIED') THEN 100
                ELSE 0
              END +
              -- Plan weights
              CASE WHEN p.plan = 'PREMIUM' AND p.trial_end_at > NOW() THEN 50 ELSE 0 END +
              -- Lifecycle status weights (ACTIVE > INACTIVE)
-             CASE WHEN p.lifecycle_status = 'ACTIVE' THEN 10 ELSE 0 END as trust_score,
+             CASE WHEN p.lifecycle_status = 'ACTIVE' THEN 10 ELSE 0 END +
+             -- Disputed penalty (de-rank disputed providers)
+             CASE WHEN p.is_disputed THEN -1000 ELSE 0 END as trust_score,
              p.lifecycle_status,
+             p.is_disputed,
              (p.plan = 'PREMIUM' AND p.trial_end_at > NOW()) as is_premium,
              CASE WHEN p.trial_end_at > NOW() THEN CEIL(EXTRACT(EPOCH FROM (p.trial_end_at - NOW())) / 86400) ELSE 0 END as trial_days_left
       FROM providers p
@@ -111,6 +176,12 @@ app.get('/providers', async (req: Request, res: Response) => {
     if (category) {
       query += ` AND EXISTS (SELECT 1 FROM provider_categories pc JOIN categories c ON pc.category_id = c.id WHERE pc.provider_id = p.id AND c.name = $${paramIndex})`;
       params.push(category);
+      paramIndex++;
+    }
+
+    if (areaId) {
+      query += ` AND EXISTS (SELECT 1 FROM provider_areas pa WHERE pa.provider_id = p.id AND pa.area_id = $${paramIndex})`;
+      params.push(areaId);
       paramIndex++;
     }
 
@@ -203,7 +274,14 @@ app.get('/providers/:id', async (req, res) => {
       SELECT p.*,
              (SELECT MAX(created_at) FROM activity_events WHERE provider_id = p.id) as last_active_at,
              (p.plan = 'PREMIUM' AND p.trial_end_at > NOW()) as is_premium,
-             CASE WHEN p.trial_end_at > NOW() THEN CEIL(EXTRACT(EPOCH FROM (p.trial_end_at - NOW())) / 86400) ELSE 0 END as trial_days_left
+             CASE WHEN p.trial_end_at > NOW() THEN CEIL(EXTRACT(EPOCH FROM (p.trial_end_at - NOW())) / 86400) ELSE 0 END as trial_days_left,
+             COALESCE(
+               (SELECT json_agg(json_build_object('id', a.id, 'name', a.name, 'island', a.island))
+                FROM areas a
+                JOIN provider_areas pa ON pa.area_id = a.id
+                WHERE pa.provider_id = p.id),
+               '[]'::json
+             ) as areas
       FROM providers p
       WHERE p.id = $1 AND p.lifecycle_status != 'ARCHIVED'
     `;
@@ -220,15 +298,53 @@ app.get('/providers/:id', async (req, res) => {
 
 app.post('/providers', async (req, res) => {
   try {
-    const { name, phone, whatsapp, island, categories, areas } = req.body;
+    const {
+      name,
+      phone,
+      whatsapp,
+      island,
+      categories,
+      areas,
+      contact_call_enabled = true,
+      contact_whatsapp_enabled = true,
+      contact_sms_enabled = true,
+      preferred_contact_method,
+      typical_hours,
+      emergency_calls_accepted = false
+    } = req.body;
+
+    // Validation
+    if (!name || !phone || !island) {
+      return res.status(400).json({ error: 'Name, phone, and island are required' });
+    }
+    if (!Array.isArray(areas) || areas.length === 0) {
+      return res.status(400).json({ error: 'At least one area is required' });
+    }
+    if (!contact_call_enabled && !contact_whatsapp_enabled && !contact_sms_enabled) {
+      return res.status(400).json({ error: 'At least one contact method must be enabled' });
+    }
+    const enabledMethods = [];
+    if (contact_call_enabled) enabledMethods.push('CALL');
+    if (contact_whatsapp_enabled) enabledMethods.push('WHATSAPP');
+    if (contact_sms_enabled) enabledMethods.push('SMS');
+    if (preferred_contact_method && !enabledMethods.includes(preferred_contact_method)) {
+      return res.status(400).json({ error: 'Preferred contact method must be enabled' });
+    }
+
     const client = await pool.connect();
     try {
       await client.query('BEGIN');
       const trialStart = new Date();
       const trialEnd = new Date(trialStart.getTime() + 30 * 24 * 60 * 60 * 1000);
       const providerResult = await client.query(
-        'INSERT INTO providers (name, phone, whatsapp, island, plan, trial_start_at, trial_end_at) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id',
-        [name, phone, whatsapp, island, 'PREMIUM', trialStart, trialEnd]
+        `INSERT INTO providers (
+          name, phone, whatsapp, island, plan, trial_start_at, trial_end_at,
+          contact_call_enabled, contact_whatsapp_enabled, contact_sms_enabled,
+          preferred_contact_method, typical_hours, emergency_calls_accepted
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13) RETURNING id`,
+        [name, phone, whatsapp, island, 'PREMIUM', trialStart, trialEnd,
+         contact_call_enabled, contact_whatsapp_enabled, contact_sms_enabled,
+         preferred_contact_method, typical_hours, emergency_calls_accepted]
       );
       const providerId = providerResult.rows[0].id;
 
@@ -239,10 +355,11 @@ app.post('/providers', async (req, res) => {
         }
       }
 
-      for (const area of areas) {
-        const areaResult = await client.query('SELECT id FROM areas WHERE island = $1 AND neighborhood = $2', [area.island, area.neighborhood]);
+      for (const areaId of areas) {
+        // Validate area belongs to provider's island
+        const areaResult = await client.query('SELECT id FROM areas WHERE id = $1 AND island = $2', [areaId, island]);
         if (areaResult.rows.length > 0) {
-          await client.query('INSERT INTO provider_areas (provider_id, area_id) VALUES ($1, $2)', [providerId, areaResult.rows[0].id]);
+          await client.query('INSERT INTO provider_areas (provider_id, area_id) VALUES ($1, $2)', [providerId, areaId]);
         }
       }
 
@@ -263,28 +380,123 @@ app.post('/providers', async (req, res) => {
 app.put('/providers/:id', async (req, res) => {
   try {
     const { id } = req.params;
-    const { name, phone, whatsapp, island, categories, areas } = req.body;
+    const {
+      name,
+      phone,
+      whatsapp,
+      island,
+      categories,
+      areas,
+      contact_call_enabled,
+      contact_whatsapp_enabled,
+      contact_sms_enabled,
+      preferred_contact_method,
+      typical_hours,
+      emergency_calls_accepted
+    } = req.body;
+
+    // Validation
+    if (!Array.isArray(areas) || areas.length === 0) {
+      return res.status(400).json({ error: 'At least one area is required' });
+    }
+    if (typeof contact_call_enabled === 'boolean' && typeof contact_whatsapp_enabled === 'boolean' && typeof contact_sms_enabled === 'boolean') {
+      if (!contact_call_enabled && !contact_whatsapp_enabled && !contact_sms_enabled) {
+        return res.status(400).json({ error: 'At least one contact method must be enabled' });
+      }
+      const enabledMethods = [];
+      if (contact_call_enabled) enabledMethods.push('CALL');
+      if (contact_whatsapp_enabled) enabledMethods.push('WHATSAPP');
+      if (contact_sms_enabled) enabledMethods.push('SMS');
+      if (preferred_contact_method && !enabledMethods.includes(preferred_contact_method)) {
+        return res.status(400).json({ error: 'Preferred contact method must be enabled' });
+      }
+    }
+
     const client = await pool.connect();
     try {
       await client.query('BEGIN');
-      await client.query(
-        'UPDATE providers SET name = $1, phone = $2, whatsapp = $3, island = $4 WHERE id = $5',
-        [name, phone, whatsapp, island, id]
-      );
+      const updateFields = [];
+      const updateValues = [];
+      let paramIndex = 1;
 
-      await client.query('DELETE FROM provider_categories WHERE provider_id = $1', [id]);
-      for (const categoryName of categories) {
-        const categoryResult = await client.query('SELECT id FROM categories WHERE name = $1', [categoryName]);
-        if (categoryResult.rows.length > 0) {
-          await client.query('INSERT INTO provider_categories (provider_id, category_id) VALUES ($1, $2)', [id, categoryResult.rows[0].id]);
+      if (name !== undefined) {
+        updateFields.push(`name = $${paramIndex}`);
+        updateValues.push(name);
+        paramIndex++;
+      }
+      if (phone !== undefined) {
+        updateFields.push(`phone = $${paramIndex}`);
+        updateValues.push(phone);
+        paramIndex++;
+      }
+      if (whatsapp !== undefined) {
+        updateFields.push(`whatsapp = $${paramIndex}`);
+        updateValues.push(whatsapp);
+        paramIndex++;
+      }
+      if (island !== undefined) {
+        updateFields.push(`island = $${paramIndex}`);
+        updateValues.push(island);
+        paramIndex++;
+      }
+      if (contact_call_enabled !== undefined) {
+        updateFields.push(`contact_call_enabled = $${paramIndex}`);
+        updateValues.push(contact_call_enabled);
+        paramIndex++;
+      }
+      if (contact_whatsapp_enabled !== undefined) {
+        updateFields.push(`contact_whatsapp_enabled = $${paramIndex}`);
+        updateValues.push(contact_whatsapp_enabled);
+        paramIndex++;
+      }
+      if (contact_sms_enabled !== undefined) {
+        updateFields.push(`contact_sms_enabled = $${paramIndex}`);
+        updateValues.push(contact_sms_enabled);
+        paramIndex++;
+      }
+      if (preferred_contact_method !== undefined) {
+        updateFields.push(`preferred_contact_method = $${paramIndex}`);
+        updateValues.push(preferred_contact_method);
+        paramIndex++;
+      }
+      if (typical_hours !== undefined) {
+        updateFields.push(`typical_hours = $${paramIndex}`);
+        updateValues.push(typical_hours);
+        paramIndex++;
+      }
+      if (emergency_calls_accepted !== undefined) {
+        updateFields.push(`emergency_calls_accepted = $${paramIndex}`);
+        updateValues.push(emergency_calls_accepted);
+        paramIndex++;
+      }
+
+      if (updateFields.length > 0) {
+        updateValues.push(id);
+        await client.query(
+          `UPDATE providers SET ${updateFields.join(', ')} WHERE id = $${paramIndex}`,
+          updateValues
+        );
+      }
+
+      if (categories) {
+        await client.query('DELETE FROM provider_categories WHERE provider_id = $1', [id]);
+        for (const categoryName of categories) {
+          const categoryResult = await client.query('SELECT id FROM categories WHERE name = $1', [categoryName]);
+          if (categoryResult.rows.length > 0) {
+            await client.query('INSERT INTO provider_categories (provider_id, category_id) VALUES ($1, $2)', [id, categoryResult.rows[0].id]);
+          }
         }
       }
 
-      await client.query('DELETE FROM provider_areas WHERE provider_id = $1', [id]);
-      for (const area of areas) {
-        const areaResult = await client.query('SELECT id FROM areas WHERE island = $1 AND neighborhood = $2', [area.island, area.neighborhood]);
-        if (areaResult.rows.length > 0) {
-          await client.query('INSERT INTO provider_areas (provider_id, area_id) VALUES ($1, $2)', [id, areaResult.rows[0].id]);
+      if (areas) {
+        await client.query('DELETE FROM provider_areas WHERE provider_id = $1', [id]);
+        for (const areaId of areas) {
+          // Get current island if not updating island
+          const islandToCheck = island || (await client.query('SELECT island FROM providers WHERE id = $1', [id])).rows[0].island;
+          const areaResult = await client.query('SELECT id FROM areas WHERE id = $1 AND island = $2', [areaId, islandToCheck]);
+          if (areaResult.rows.length > 0) {
+            await client.query('INSERT INTO provider_areas (provider_id, area_id) VALUES ($1, $2)', [id, areaId]);
+          }
         }
       }
 
@@ -336,7 +548,9 @@ app.get('/admin/providers', adminAuth, async (req, res) => {
       SELECT p.*,
              (SELECT MAX(created_at) FROM activity_events WHERE provider_id = p.id) as last_active_at,
              (p.plan = 'PREMIUM' AND p.trial_end_at > NOW()) as is_premium,
-             CASE WHEN p.trial_end_at > NOW() THEN CEIL(EXTRACT(EPOCH FROM (p.trial_end_at - NOW())) / 86400) ELSE 0 END as trial_days_left
+             CASE WHEN p.trial_end_at > NOW() THEN CEIL(EXTRACT(EPOCH FROM (p.trial_end_at - NOW())) / 86400) ELSE 0 END as trial_days_left,
+             p.is_disputed,
+             p.disputed_at
       FROM providers p
       ORDER BY p.created_at DESC
     `;
@@ -352,24 +566,34 @@ app.put('/admin/providers/:id/verify', adminAuth, async (req, res) => {
   try {
     const { id } = req.params;
     const { verified } = req.body;
-    
+
     if (verified) {
       // Add VERIFIED badge if not already present
       await pool.query(`
-        INSERT INTO provider_badges (provider_id, badge) 
-        VALUES ($1, 'VERIFIED') 
+        INSERT INTO provider_badges (provider_id, badge)
+        VALUES ($1, 'VERIFIED')
         ON CONFLICT (provider_id, badge) DO NOTHING
       `, [id]);
     } else {
       // Remove VERIFIED badge
       await pool.query(`
-        DELETE FROM provider_badges 
+        DELETE FROM provider_badges
         WHERE provider_id = $1 AND badge = 'VERIFIED'
       `, [id]);
     }
-    
+
     await pool.query('UPDATE providers SET status_last_updated_at = CURRENT_TIMESTAMP WHERE id = $1', [id]);
     await ActivityService.logEvent(parseInt(id), 'VERIFIED');
+
+    // Log audit event
+    const badgeText = verified ? 'VERIFIED' : 'unverified';
+    await AuditService.log({
+      actionType: 'VERIFY',
+      adminActor: req.adminActor!,
+      providerId: parseInt(id),
+      notes: `Provider ${badgeText} by admin`
+    });
+
     res.json({ message: 'Provider verification updated' });
   } catch (error) {
     console.error(error);
@@ -380,9 +604,58 @@ app.put('/admin/providers/:id/verify', adminAuth, async (req, res) => {
 app.put('/admin/providers/:id/archive', adminAuth, async (req, res) => {
   try {
     const { id } = req.params;
-    await pool.query("UPDATE providers SET lifecycle_status = 'ARCHIVED', status_last_updated_at = CURRENT_TIMESTAMP WHERE id = $1", [id]);
+
+    // Get current status
+    const currentResult = await pool.query('SELECT lifecycle_status FROM providers WHERE id = $1', [id]);
+    if (currentResult.rows.length === 0) {
+      return res.status(404).json({ error: 'Provider not found' });
+    }
+    const currentStatus = currentResult.rows[0].lifecycle_status;
+
+    // Toggle between ACTIVE and ARCHIVED
+    const newStatus = currentStatus === 'ARCHIVED' ? 'ACTIVE' : 'ARCHIVED';
+    const isArchiving = newStatus === 'ARCHIVED';
+
+    await pool.query("UPDATE providers SET lifecycle_status = $1, status_last_updated_at = CURRENT_TIMESTAMP WHERE id = $2", [newStatus, id]);
     await ActivityService.logEvent(parseInt(id), 'ARCHIVED');
-    res.json({ message: 'Provider archived' });
+
+    // Log audit event
+    const actionType = isArchiving ? 'ARCHIVE' : 'UNARCHIVE';
+    await AuditService.log({
+      actionType,
+      adminActor: req.adminActor!,
+      providerId: parseInt(id),
+      notes: `Provider ${isArchiving ? 'archived' : 'unarchived'} by admin`
+    });
+
+    res.json({ message: `Provider ${isArchiving ? 'archived' : 'unarchived'}` });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+app.patch('/admin/providers/:id/disputed', adminAuth, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { isDisputed, notes } = req.body;
+
+    await pool.query(`
+      UPDATE providers
+      SET is_disputed = $1, disputed_at = $2, status_last_updated_at = CURRENT_TIMESTAMP
+      WHERE id = $3
+    `, [isDisputed, isDisputed ? new Date() : null, id]);
+
+    // Log audit event
+    const actionType = isDisputed ? 'MARK_DISPUTED' : 'UNMARK_DISPUTED';
+    await AuditService.log({
+      actionType,
+      adminActor: req.adminActor!,
+      providerId: parseInt(id),
+      notes: notes || `Provider ${isDisputed ? 'marked as disputed' : 'unmarked as disputed'} by admin`
+    });
+
+    res.json({ message: `Provider ${isDisputed ? 'marked as disputed' : 'unmarked as disputed'}` });
   } catch (error) {
     console.error(error);
     res.status(500).json({ error: 'Internal server error' });
@@ -431,14 +704,103 @@ app.post('/admin/jobs/recompute-provider-lifecycle', adminAuth, async (req, res)
 
 app.get('/admin/reports', adminAuth, async (req, res) => {
   try {
-    const query = `
+    const { status, type } = req.query;
+
+    let query = `
       SELECT r.*, p.name as provider_name
       FROM reports r
       JOIN providers p ON r.provider_id = p.id
-      ORDER BY r.created_at DESC
+      WHERE 1=1
     `;
-    const result = await pool.query(query);
+    const params: any[] = [];
+    let paramIndex = 1;
+
+    // Default filter: show NEW + IN_REVIEW
+    if (!status) {
+      query += ` AND r.status IN ('NEW', 'IN_REVIEW')`;
+    } else if (status !== 'ALL') {
+      query += ` AND r.status = $${paramIndex}`;
+      params.push(status);
+      paramIndex++;
+    }
+
+    if (type && type !== 'ALL') {
+      query += ` AND r.report_type = $${paramIndex}`;
+      params.push(type);
+      paramIndex++;
+    }
+
+    query += ` ORDER BY r.created_at DESC`;
+
+    const result = await pool.query(query, params);
     res.json(result.rows);
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+app.patch('/admin/reports/:id', adminAuth, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { status, adminNotes } = req.body;
+
+    // Get current status for audit log
+    const currentResult = await pool.query('SELECT status FROM reports WHERE id = $1', [id]);
+    const oldStatus = currentResult.rows[0]?.status;
+
+    // Update report
+    await pool.query(`
+      UPDATE reports
+      SET status = $1, admin_notes = $2
+      WHERE id = $3
+    `, [status, adminNotes || null, id]);
+
+    // Log audit event
+    await AuditService.log({
+      actionType: 'REPORT_STATUS_CHANGED',
+      adminActor: req.adminActor!,
+      reportId: parseInt(id),
+      notes: `Report status changed from ${oldStatus} to ${status}`
+    });
+
+    res.json({ message: 'Report updated successfully' });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Emergency mode endpoints
+app.get('/settings/emergency-mode', async (req, res) => {
+  try {
+    const result = await pool.query('SELECT value FROM app_settings WHERE key = $1', ['emergency_mode']);
+    const emergencyMode = result.rows[0]?.value || { enabled: false };
+    res.json(emergencyMode);
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+app.patch('/admin/settings/emergency-mode', adminAuth, async (req, res) => {
+  try {
+    const { enabled, notes } = req.body;
+
+    await pool.query(`
+      UPDATE app_settings
+      SET value = $1, updated_at = CURRENT_TIMESTAMP
+      WHERE key = $2
+    `, [{ enabled }, 'emergency_mode']);
+
+    // Log audit event
+    await AuditService.log({
+      actionType: 'EMERGENCY_MODE_TOGGLED',
+      adminActor: req.adminActor!,
+      notes: notes || `Emergency mode ${enabled ? 'enabled' : 'disabled'} by admin`
+    });
+
+    res.json({ message: `Emergency mode ${enabled ? 'enabled' : 'disabled'}` });
   } catch (error) {
     console.error(error);
     res.status(500).json({ error: 'Internal server error' });

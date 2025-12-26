@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Card } from '../components/Card';
 import { Button } from '../components/Button';
@@ -6,21 +6,47 @@ import { Button } from '../components/Button';
 const API_BASE = 'http://localhost:3000';
 
 interface Area {
+  id: number;
+  name: string;
   island: string;
-  neighborhood: string;
 }
 
 export const Join: React.FC = () => {
   const navigate = useNavigate();
+  const [availableAreas, setAvailableAreas] = useState<Area[]>([]);
   const [form, setForm] = useState({
     name: '',
     phone: '',
     whatsapp: '',
     island: '',
     categories: [] as string[],
-    areas: [] as Area[],
+    areas: [] as number[],
+    contact_call_enabled: true,
+    contact_whatsapp_enabled: true,
+    contact_sms_enabled: true,
+    preferred_contact_method: '',
+    typical_hours: '',
+    emergency_calls_accepted: false,
   });
   const [errors, setErrors] = useState<Record<string, string>>({});
+
+  useEffect(() => {
+    if (form.island) {
+      fetchAreas();
+    }
+  }, [form.island]);
+
+  const fetchAreas = async () => {
+    try {
+      const response = await fetch(`${API_BASE}/areas?island=${form.island}`);
+      if (response.ok) {
+        const areas = await response.json();
+        setAvailableAreas(areas);
+      }
+    } catch (err) {
+      console.error('Failed to fetch areas');
+    }
+  };
 
   const validate = () => {
     const newErrors: Record<string, string> = {};
@@ -29,6 +55,16 @@ export const Join: React.FC = () => {
     if (!form.island) newErrors.island = 'Island is required';
     if (form.categories.length === 0) newErrors.categories = 'At least one category required';
     if (form.areas.length === 0) newErrors.areas = 'At least one area required';
+    if (!form.contact_call_enabled && !form.contact_whatsapp_enabled && !form.contact_sms_enabled) {
+      newErrors.contact_methods = 'At least one contact method must be enabled';
+    }
+    const enabledMethods = [];
+    if (form.contact_call_enabled) enabledMethods.push('CALL');
+    if (form.contact_whatsapp_enabled) enabledMethods.push('WHATSAPP');
+    if (form.contact_sms_enabled) enabledMethods.push('SMS');
+    if (form.preferred_contact_method && !enabledMethods.includes(form.preferred_contact_method)) {
+      newErrors.preferred_contact_method = 'Preferred method must be enabled';
+    }
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
   };
@@ -59,13 +95,32 @@ export const Join: React.FC = () => {
     }));
   };
 
-  const handleAreaChange = (area: Area, checked: boolean) => {
+  const handleAreaChange = (areaId: number, checked: boolean) => {
     setForm(prev => ({
       ...prev,
       areas: checked
-        ? [...prev.areas, area]
-        : prev.areas.filter(a => a.island !== area.island || a.neighborhood !== area.neighborhood),
+        ? [...prev.areas, areaId]
+        : prev.areas.filter(id => id !== areaId),
     }));
+  };
+
+  const handleContactMethodChange = (method: string, enabled: boolean) => {
+    setForm(prev => {
+      const newForm = { ...prev, [`contact_${method.toLowerCase()}_enabled`]: enabled };
+      // Clear preferred method if it's disabled
+      if (!enabled && prev.preferred_contact_method === method) {
+        newForm.preferred_contact_method = '';
+      }
+      return newForm;
+    });
+  };
+
+  const getEnabledMethods = () => {
+    const methods = [];
+    if (form.contact_call_enabled) methods.push('CALL');
+    if (form.contact_whatsapp_enabled) methods.push('WHATSAPP');
+    if (form.contact_sms_enabled) methods.push('SMS');
+    return methods;
   };
 
   return (
@@ -110,9 +165,9 @@ export const Join: React.FC = () => {
               className="w-full border rounded px-3 py-2"
             >
               <option value="">Select Island</option>
-              <option value="St. Thomas">St. Thomas</option>
-              <option value="St. John">St. John</option>
-              <option value="St. Croix">St. Croix</option>
+              <option value="STT">St. Thomas</option>
+              <option value="STJ">St. John</option>
+              <option value="STX">St. Croix</option>
             </select>
             {errors.island && <p className="text-red-500 text-sm">{errors.island}</p>}
           </div>
@@ -130,21 +185,82 @@ export const Join: React.FC = () => {
             {errors.categories && <p className="text-red-500 text-sm">{errors.categories}</p>}
           </div>
           <div className="mb-4">
-            <label className="block text-sm font-medium mb-1">Areas</label>
-            {[
-              { island: 'St. Thomas', neighborhood: 'Charlotte Amalie' },
-              { island: 'St. John', neighborhood: 'Cruz Bay' },
-            ].map(area => (
-              <label key={`${area.island}-${area.neighborhood}`} className="block">
+            <label className="block text-sm font-medium mb-1">Service Areas</label>
+            {availableAreas.map(area => (
+              <label key={area.id} className="block">
                 <input
                   type="checkbox"
-                  checked={form.areas.some(a => a.island === area.island && a.neighborhood === area.neighborhood)}
-                  onChange={(e) => handleAreaChange(area, e.target.checked)}
-                /> {area.island} - {area.neighborhood}
+                  checked={form.areas.includes(area.id)}
+                  onChange={(e) => handleAreaChange(area.id, e.target.checked)}
+                /> {area.name}
               </label>
             ))}
             {errors.areas && <p className="text-red-500 text-sm">{errors.areas}</p>}
           </div>
+
+          <div className="mb-4">
+            <h3 className="text-lg font-medium mb-2">Contact Preferences</h3>
+            <div className="space-y-2">
+              <label className="block">
+                <input
+                  type="checkbox"
+                  checked={form.contact_call_enabled}
+                  onChange={(e) => handleContactMethodChange('call', e.target.checked)}
+                /> Enable Call button
+              </label>
+              <label className="block">
+                <input
+                  type="checkbox"
+                  checked={form.contact_whatsapp_enabled}
+                  onChange={(e) => handleContactMethodChange('whatsapp', e.target.checked)}
+                /> Enable WhatsApp button
+              </label>
+              <label className="block">
+                <input
+                  type="checkbox"
+                  checked={form.contact_sms_enabled}
+                  onChange={(e) => handleContactMethodChange('sms', e.target.checked)}
+                /> Enable SMS button
+              </label>
+              {errors.contact_methods && <p className="text-red-500 text-sm">{errors.contact_methods}</p>}
+            </div>
+            <div className="mt-2">
+              <label className="block text-sm font-medium mb-1">Preferred Contact Method</label>
+              <select
+                value={form.preferred_contact_method}
+                onChange={(e) => setForm(prev => ({ ...prev, preferred_contact_method: e.target.value }))}
+                className="w-full border rounded px-3 py-2"
+              >
+                <option value="">None</option>
+                {getEnabledMethods().map(method => (
+                  <option key={method} value={method}>{method}</option>
+                ))}
+              </select>
+              {errors.preferred_contact_method && <p className="text-red-500 text-sm">{errors.preferred_contact_method}</p>}
+            </div>
+          </div>
+
+          <div className="mb-4">
+            <h3 className="text-lg font-medium mb-2">Work Information</h3>
+            <div className="mb-2">
+              <label className="block text-sm font-medium mb-1">Typical Hours</label>
+              <input
+                type="text"
+                value={form.typical_hours}
+                onChange={(e) => setForm(prev => ({ ...prev, typical_hours: e.target.value }))}
+                placeholder="e.g., Mon-Fri 8AM-5PM, Sat 9AM-1PM"
+                className="w-full border rounded px-3 py-2"
+              />
+            </div>
+            <label className="block">
+              <input
+                type="checkbox"
+                checked={form.emergency_calls_accepted}
+                onChange={(e) => setForm(prev => ({ ...prev, emergency_calls_accepted: e.target.checked }))}
+              /> Accept emergency calls
+            </label>
+          </div>
+
           <Button type="submit">Join</Button>
         </form>
       </Card>
