@@ -8,6 +8,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Premium Trial System**: Complete subscription system with automatic 30-day trials
+  - Automatic 30-day PREMIUM trials for all new providers (no payment processing)
+  - Premium ranking boost (+50 points) for active premium providers
+  - Emergency eligibility boost (+200/+400 points) for premium providers with emergency badges
+  - Admin job endpoint (`POST /admin/jobs/expire-trials`) for automatic trial expiration
+  - Transparent trial status indicators throughout the application
+  - Graceful trial expiration with automatic downgrade to FREE plan
+  - Audit logging for trial expiration actions
+  - Frontend status cards showing trial days remaining or plan status
+  - Premium badges on provider cards and detail pages
+  - Database schema with `plan_source` enum (FREE/TRIAL/PAID) and trial tracking fields
+
 - **Minimum Viable Governance (MVG) System**: Complete admin governance with audit trails and dispute management
   - Audit logging for all admin actions (VERIFY, ARCHIVE, UNARCHIVE, MARK_DISPUTED, UNMARK_DISPUTED, REPORT_STATUS_CHANGED, EMERGENCY_MODE_TOGGLED)
   - Admin actor identification using key suffix for stable logging
@@ -49,15 +61,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Frontend display of inactive status with badges
   - Comprehensive test coverage (54/54 tests passing)
 
+### Fixed
+- **TypeScript Compilation Errors**: Resolved all TypeScript errors across the codebase
+  - Fixed mock typing issues in test files by casting `global.prompt` and `global.confirm` as `any`
+  - Removed unused imports (`act` from `@testing-library/react`)
+  - Removed unused variables (`API_BASE` from AdminLogin component)
+  - All TypeScript checks now pass without errors
+
 ### Testing
-- **Complete Test Suite**: 100% test coverage for all features
-  - 48 API tests covering all backend functionality
-  - 6 frontend tests for UI components
+- **Complete Test Suite**: 100% test coverage for all features including trial system
+  - 52 API tests covering all backend functionality including trial creation, expiration, and premium ranking
+  - 20 frontend tests for UI components including premium badges, trial status cards, and provider displays
   - Database integration tests with proper transaction isolation
   - Error handling and edge case validation
   - Fixed Jest configuration to prevent duplicate test execution
 
 ### Database
+- **Trial System Schema**: New columns and enums for premium plan management
+  - `plan_source` enum (FREE/TRIAL/PAID) for tracking plan acquisition method
+  - `trial_start_at` and `trial_end_at` timestamp columns for trial tracking
+  - Performance indexes for plan-based queries
+  - Migration file: `011_add_plan_source.sql`
+
 - **Governance Schema**: New tables and enums for admin audit and dispute management
   - `admin_audit_log` table for comprehensive admin action logging
   - `admin_action_type` enum for action categorization
@@ -80,6 +105,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Migration files: `007_add_trust_system.sql`, `008_add_trust_indexes.sql`
 
 ### Features
+- **Premium Trial System**: Complete subscription management with automatic trials
+  - Automatic 30-day premium trials for new providers (no payment required)
+  - Premium ranking boost (+50 points) for active premium providers
+  - Emergency eligibility boost for premium providers with emergency badges
+  - Admin job for automatic trial expiration with audit logging
+  - Transparent status indicators showing trial days remaining
+  - Graceful trial expiration maintaining listing visibility
+  - Premium badges on provider cards and detail pages
+  - Dashboard trial status card with clear plan information
+
 - **Admin Governance Dashboard**: Complete admin panel with dispute management and audit trails
   - Provider dispute marking/unmarking with admin-only visibility
   - Report triage workflow with status management (NEW/IN_REVIEW/RESOLVED)
@@ -95,6 +130,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Preferred Contact Highlighting**: Clear indication of provider's preferred communication method
 
 ### Technical Improvements
+- **Trial System Testing**: Comprehensive test coverage for premium trial functionality
+  - Frontend tests for premium badges, trial status cards, and provider displays
+  - API tests for trial creation, expiration jobs, and premium ranking logic
+  - Mock testing for complex database queries with trial status
+  - Error handling validation for trial expiration edge cases
+
 - **Mock Testing**: Fixed complex database transaction mocking
 - **Error Handling**: Graceful failure handling in activity logging
 - **Code Coverage**: 70%+ test coverage for server-side logic
