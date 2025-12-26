@@ -176,4 +176,193 @@ describe('ProviderDetail', () => {
       expect.any(Object)
     );
   });
+
+  it('renders availability meaning block', async () => {
+    fetchMock.mockResolvedValueOnce({
+      ok: true,
+      json: () => Promise.resolve(mockProvider),
+    });
+
+    renderProviderDetail();
+
+    await waitFor(() => {
+      expect(screen.getByText('John Doe')).toBeInTheDocument();
+    });
+
+    expect(screen.getByText('Availability')).toBeInTheDocument();
+    expect(screen.getByText('Availability shows when this provider is generally open to new work. It is not a scheduled appointment.')).toBeInTheDocument();
+    expect(screen.getByText('Confirm timing directly with the provider.')).toBeInTheDocument();
+  });
+
+  it('renders disclaimer copy above CTAs', async () => {
+    fetchMock.mockResolvedValueOnce({
+      ok: true,
+      json: () => Promise.resolve(mockProvider),
+    });
+
+    renderProviderDetail();
+
+    await waitFor(() => {
+      expect(screen.getByText('John Doe')).toBeInTheDocument();
+    });
+
+    // Check that disclaimer text exists
+    expect(screen.getByText("We don't guarantee work, pricing, timing, or quality.")).toBeInTheDocument();
+    expect(screen.getByText('Confirm details directly with the provider.')).toBeInTheDocument();
+
+    // Check DOM order: disclaimer should appear before CTA buttons
+    const disclaimerElement = screen.getByText("We don't guarantee work, pricing, timing, or quality.").closest('.border-blue-200');
+    const contactSection = screen.getByText('Contact').closest('div');
+    const ctaButton = screen.getByText('📞 Call');
+
+    // Disclaimer should be within contact section and before CTA buttons
+    expect(contactSection).toContainElement(disclaimerElement);
+    expect(contactSection).toContainElement(ctaButton);
+  });
+
+  it('displays preferred contact method when provided', async () => {
+    fetchMock.mockResolvedValueOnce({
+      ok: true,
+      json: () => Promise.resolve(mockProvider),
+    });
+
+    renderProviderDetail();
+
+    await waitFor(() => {
+      expect(screen.getByText('John Doe')).toBeInTheDocument();
+    });
+
+    expect(screen.getByText('Preferred contact: CALL')).toBeInTheDocument();
+  });
+
+  it('hides preferred contact method when null', async () => {
+    const providerWithoutPreferred = { ...mockProvider, preferred_contact_method: null };
+
+    fetchMock.mockResolvedValueOnce({
+      ok: true,
+      json: () => Promise.resolve(providerWithoutPreferred),
+    });
+
+    renderProviderDetail();
+
+    await waitFor(() => {
+      expect(screen.getByText('John Doe')).toBeInTheDocument();
+    });
+
+    expect(screen.queryByText(/Preferred contact:/)).not.toBeInTheDocument();
+  });
+
+  it('displays typical hours when provided', async () => {
+    fetchMock.mockResolvedValueOnce({
+      ok: true,
+      json: () => Promise.resolve(mockProvider),
+    });
+
+    renderProviderDetail();
+
+    await waitFor(() => {
+      expect(screen.getByText('John Doe')).toBeInTheDocument();
+    });
+
+    expect(screen.getByText('Hours')).toBeInTheDocument();
+    expect(screen.getByText('9-5')).toBeInTheDocument();
+  });
+
+  it('omits typical hours when null or empty', async () => {
+    const providerWithoutHours = { ...mockProvider, typical_hours: null };
+
+    fetchMock.mockResolvedValueOnce({
+      ok: true,
+      json: () => Promise.resolve(providerWithoutHours),
+    });
+
+    renderProviderDetail();
+
+    await waitFor(() => {
+      expect(screen.getByText('John Doe')).toBeInTheDocument();
+    });
+
+    expect(screen.queryByText(/Typical hours:/)).not.toBeInTheDocument();
+  });
+
+  it('displays emergency calls accepted when true', async () => {
+    const providerWithEmergency = { ...mockProvider, emergency_calls_accepted: true };
+
+    fetchMock.mockResolvedValueOnce({
+      ok: true,
+      json: () => Promise.resolve(providerWithEmergency),
+    });
+
+    renderProviderDetail();
+
+    await waitFor(() => {
+      expect(screen.getByText('John Doe')).toBeInTheDocument();
+    });
+
+    expect(screen.getByText('Emergency Calls Accepted')).toBeInTheDocument();
+  });
+
+  it('omits emergency calls accepted when false', async () => {
+    const providerWithoutEmergency = { ...mockProvider, emergency_calls_accepted: false };
+
+    fetchMock.mockResolvedValueOnce({
+      ok: true,
+      json: () => Promise.resolve(providerWithoutEmergency),
+    });
+
+    renderProviderDetail();
+
+    await waitFor(() => {
+      expect(screen.getByText('John Doe')).toBeInTheDocument();
+    });
+
+    expect(screen.queryByText('Emergency Calls Accepted')).not.toBeInTheDocument();
+  });
+
+  it('renders only enabled contact methods as CTAs', async () => {
+    fetchMock.mockResolvedValueOnce({
+      ok: true,
+      json: () => Promise.resolve(mockProvider),
+    });
+
+    renderProviderDetail();
+
+    await waitFor(() => {
+      expect(screen.getByText('John Doe')).toBeInTheDocument();
+    });
+
+    // Should show Call button (enabled)
+    expect(screen.getByText('📞 Call')).toBeInTheDocument();
+
+    // Should not show WhatsApp button (disabled)
+    expect(screen.queryByText('💬 WhatsApp')).not.toBeInTheDocument();
+
+    // Should not show SMS button (disabled)
+    expect(screen.queryByText('💬 SMS')).not.toBeInTheDocument();
+  });
+
+  it('renders multiple enabled contact methods', async () => {
+    const providerWithMultipleContacts = {
+      ...mockProvider,
+      contact_call_enabled: true,
+      contact_whatsapp_enabled: true,
+      contact_sms_enabled: true,
+      whatsapp: '1234567890'
+    };
+
+    fetchMock.mockResolvedValueOnce({
+      ok: true,
+      json: () => Promise.resolve(providerWithMultipleContacts),
+    });
+
+    renderProviderDetail();
+
+    await waitFor(() => {
+      expect(screen.getByText('John Doe')).toBeInTheDocument();
+    });
+
+    expect(screen.getByText('📞 Call')).toBeInTheDocument();
+    expect(screen.getByText('💬 WhatsApp')).toBeInTheDocument();
+    expect(screen.getByText('💬 SMS')).toBeInTheDocument();
+  });
 });

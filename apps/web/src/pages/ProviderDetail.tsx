@@ -3,6 +3,7 @@ import { useParams } from 'react-router-dom';
 import { Card } from '../components/Card';
 import { Badge } from '../components/Badge';
 import { Button } from '../components/Button';
+import { DisclaimerNotice } from '../components/DisclaimerNotice';
 
 interface Provider {
   id: number;
@@ -13,6 +14,9 @@ interface Provider {
   profile: any;
   status: string;
   last_active_at: string;
+  plan: string;
+  is_premium_active: boolean;
+  is_trial: boolean;
   contact_call_enabled: boolean;
   contact_whatsapp_enabled: boolean;
   contact_sms_enabled: boolean;
@@ -99,9 +103,23 @@ export const ProviderDetail: React.FC = () => {
           <h1 className="text-3xl font-bold mb-4">{provider.name}</h1>
           <p className="text-gray-600 mb-2">{provider.island}</p>
           <Badge label={provider.status} variant={getAvailabilityColor(provider.status)} className="mb-4" />
+          {provider.is_premium_active && (
+            <Badge label={provider.is_trial ? "Trial" : "Premium"} variant="success" className="mb-4 ml-2" />
+          )}
           <p className="text-sm text-gray-500 mb-4">
-            Last active: {provider.last_active_at ? `${getHoursAgo(provider.last_active_at)} hours ago` : 'Never'}
+            Profile activity: {provider.last_active_at ? `${getHoursAgo(provider.last_active_at)} hours ago` : 'Never'}
           </p>
+
+          <div className="mb-4 p-3 bg-gray-50 rounded-lg">
+            <h3 className="text-sm font-medium text-gray-800 mb-2">Availability</h3>
+            <p className="text-sm text-gray-600">
+              Availability shows when this provider is generally open to new work. It is not a scheduled appointment.
+            </p>
+            <p className="text-sm text-gray-600 mt-1">
+              Confirm timing directly with the provider.
+            </p>
+          </div>
+
           {provider.preferred_contact_method && (
             <p className="text-sm text-gray-600 mb-4">
               Preferred contact: {provider.preferred_contact_method}
@@ -130,6 +148,7 @@ export const ProviderDetail: React.FC = () => {
 
           <div className="mb-4">
             <h2 className="text-xl font-semibold mb-2">Contact</h2>
+            <DisclaimerNotice variant="full" className="mb-3" />
             <div className="flex flex-wrap gap-2">
               {provider.contact_call_enabled && (
                 <Button href={`tel:${provider.phone}`}>📞 Call</Button>
