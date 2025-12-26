@@ -2,12 +2,12 @@
 
 A comprehensive provider directory application for the Virgin Islands, built as a monorepo with a React frontend, Express.js API, and PostgreSQL database. This platform allows users to discover and connect with local service providers, while providing tools for providers to manage their listings and administrators to oversee the system.
 
-**✨ Featured: Trust System** - Complete behavior-based provider lifecycle management with activity tracking, automated status updates, and comprehensive test coverage (47/47 tests passing).
+**✨ Featured: Trust System & Contact Preferences** - Complete behavior-based provider lifecycle management with activity tracking, automated status updates, contact preferences (call/WhatsApp/SMS), service areas filtering, and comprehensive test coverage (54/54 tests passing).
 
 ## Features
 
 ### For Users
-- **Browse Providers**: Search and filter providers by category, island, availability, and status
+- **Browse Providers**: Search and filter providers by category, island, area, availability, and status
 - **Provider Details**: View detailed profiles including contact information and services
 - **Real-time Availability**: Check provider availability status (Today, Next 3 Days, This Week, etc.)
 - **Report Listings**: Submit reports for inappropriate or outdated provider information
@@ -15,6 +15,9 @@ A comprehensive provider directory application for the Virgin Islands, built as 
 ### For Providers
 - **Onboarding**: Easy registration and profile setup process
 - **Dashboard**: Manage profile, update availability, and track activity
+- **Contact Preferences**: Enable/disable call, WhatsApp, SMS, and set preferred contact method
+- **Service Areas**: Multi-select service areas within provider's island
+- **Work Information**: Set typical hours and emergency call acceptance
 - **Plan Management**: Choose between FREE and PREMIUM plans with trial periods
 - **Activity Tracking**: Automatic logging of provider interactions and updates
 
@@ -208,9 +211,9 @@ helpinghand/
 - Format code: `pnpm format`
 
 ### Testing
-- API tests: `pnpm --filter api test` (41/41 tests passing ✅)
+- API tests: `pnpm --filter api test` (48/48 tests passing ✅)
 - Web tests: `pnpm --filter web test` (6/6 tests passing ✅)
-- **Total Coverage**: 47/47 tests passing (100% success rate)
+- **Total Coverage**: 54/54 tests passing (100% success rate)
 
 ### Building for Production
 ```bash

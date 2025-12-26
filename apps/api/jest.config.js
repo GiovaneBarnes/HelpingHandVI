@@ -8,4 +8,8 @@ module.exports = {
     'src/**/*.{ts,js}',
     '!src/**/*.d.ts',
   ],
+  testPathIgnorePatterns: [
+    '<rootDir>/dist/',
+    '<rootDir>/node_modules/',
+  ],
 };

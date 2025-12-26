@@ -8,22 +8,53 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Contact Preferences System**: Comprehensive provider contact management
+  - Enable/disable individual contact methods (call, WhatsApp, SMS)
+  - Set preferred contact method for prioritized communication
+  - Frontend validation and user-friendly toggles
+  - Backend validation with proper error handling
+
+- **Service Areas Management**: Multi-select service areas within provider's island
+  - Dynamic area loading based on selected island
+  - Junction table for provider-area relationships
+  - Frontend multi-select component with validation
+  - API endpoints for area data retrieval
+
+- **Work Information**: Enhanced provider profiles with work details
+  - Typical hours setting for availability expectations
+  - Emergency call acceptance toggle
+  - Work information display on provider detail pages
+  - Database schema updates with proper validation
+
+- **Area Filtering**: Advanced location-based search functionality
+  - Home page area filter that populates based on selected island
+  - API filtering by areaId parameter
+  - Improved user experience for location-based searches
+  - Frontend state management for dynamic filtering
+
 - **Trust System**: Complete behavior-based provider lifecycle management
   - Activity tracking and logging for all provider interactions
   - Automated trust scoring algorithm with badge-based ranking
   - Provider lifecycle states: ACTIVE, INACTIVE, ARCHIVED
   - Admin controls for provider verification and archiving
   - Frontend display of inactive status with badges
-  - Comprehensive test coverage (47/47 tests passing)
+  - Comprehensive test coverage (54/54 tests passing)
 
 ### Testing
-- **Complete Test Suite**: 100% test coverage for trust system features
-  - 41 API tests covering all backend functionality
+- **Complete Test Suite**: 100% test coverage for all features
+  - 48 API tests covering all backend functionality
   - 6 frontend tests for UI components
-  - Database integration tests with proper mocking
+  - Database integration tests with proper transaction isolation
   - Error handling and edge case validation
+  - Fixed Jest configuration to prevent duplicate test execution
 
 ### Database
+- **Contact & Work Schema**: New columns and enums for enhanced provider profiles
+  - `contact_method` enum for contact preferences
+  - New columns: `enable_call`, `enable_whatsapp`, `enable_sms`, `preferred_contact`, `typical_hours`, `emergency_calls`
+  - `provider_areas` junction table for service area relationships
+  - Migration file: `009_add_contact_preferences.sql`
+
 - **Trust System Schema**: New tables and indexes for activity tracking
   - `activity_events` table for provider interaction logging
   - `lifecycle_status` enum for provider states
@@ -35,12 +66,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Admin Dashboard**: Enhanced admin panel with provider lifecycle management
 - **Activity Monitoring**: Real-time tracking of provider engagement
 - **Automated Lifecycle**: Background jobs for provider status updates
+- **Contact Method Display**: Only enabled contact methods shown to users
+- **Preferred Contact Highlighting**: Clear indication of provider's preferred communication method
 
 ### Technical Improvements
 - **Mock Testing**: Fixed complex database transaction mocking
 - **Error Handling**: Graceful failure handling in activity logging
 - **Code Coverage**: 70%+ test coverage for server-side logic
 - **Type Safety**: Full TypeScript implementation maintained
+- **Jest Configuration**: Proper test path exclusion to prevent duplicate execution
+- **Database Transactions**: Improved test isolation with proper rollback
 
 ## [1.0.0] - 2025-12-25
 

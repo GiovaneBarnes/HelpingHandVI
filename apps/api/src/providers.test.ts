@@ -8,16 +8,29 @@ const pool = new Pool({
 });
 
 describe('GET /providers', () => {
+  let client: any;
+
   beforeAll(async () => {
-    // Setup test data
-    await pool.query('DELETE FROM activity_events');
-    await pool.query('DELETE FROM provider_badges');
-    await pool.query('DELETE FROM provider_areas');
-    await pool.query('DELETE FROM provider_categories');
-    await pool.query('DELETE FROM providers');
+    client = await pool.connect();
+    await client.query('BEGIN');
+  });
+
+  afterAll(async () => {
+    await client.query('ROLLBACK');
+    client.release();
+    await pool.end();
+  });
+
+  beforeEach(async () => {
+    // Clean up test data within the transaction
+    await client.query('DELETE FROM activity_events');
+    await client.query('DELETE FROM provider_badges');
+    await client.query('DELETE FROM provider_areas');
+    await client.query('DELETE FROM provider_categories');
+    await client.query('DELETE FROM providers');
 
     // Insert test providers with lifecycle status
-    await pool.query(`
+    await client.query(`
       INSERT INTO providers (id, name, phone, island, status, archived, lifecycle_status, plan, trial_end_at) VALUES
       (1, 'Provider A', '123', 'St. Thomas', 'TODAY', false, 'ACTIVE', 'FREE', NULL),
       (2, 'Provider B', '456', 'St. John', 'THIS_WEEK', false, 'ACTIVE', 'PREMIUM', NOW() + INTERVAL '1 day'),
@@ -26,7 +39,7 @@ describe('GET /providers', () => {
     `);
 
     // Badges
-    await pool.query(`
+    await client.query(`
       INSERT INTO provider_badges (provider_id, badge) VALUES
       (1, 'VERIFIED'),
       (2, 'EMERGENCY_READY'),
@@ -34,7 +47,7 @@ describe('GET /providers', () => {
     `);
 
     // Activity events
-    await pool.query(`
+    await client.query(`
       INSERT INTO activity_events (provider_id, type, created_at) VALUES
       (1, 'PROFILE_UPDATED', '2023-12-25 10:00:00'),
       (2, 'STATUS_UPDATED', '2023-12-25 09:00:00'),
@@ -42,12 +55,8 @@ describe('GET /providers', () => {
     `);
   });
 
-  afterAll(async () => {
-    await pool.end();
-  });
-
   test('sorts by trust score: badges + plan + lifecycle', async () => {
-    const result = await pool.query(`
+    const result = await client.query(`
       SELECT p.*,
              (SELECT MAX(created_at) FROM activity_events WHERE provider_id = p.id) as last_active_at,
              CASE
@@ -77,7 +86,7 @@ describe('GET /providers', () => {
   });
 
   test('excludes archived providers from results', async () => {
-    const result = await pool.query(`
+    const result = await client.query(`
       SELECT COUNT(*) as count
       FROM providers p
       WHERE p.lifecycle_status != 'ARCHIVED'
