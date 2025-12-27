@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { Card } from '../components/Card';
 import { Badge } from '../components/Badge';
 import { Button } from '../components/Button';
+import { DisclaimerNotice } from '../components/DisclaimerNotice';
 
 interface Provider {
   id: number;
@@ -14,6 +15,8 @@ interface Provider {
   status: string;
   last_active_at: string;
   lifecycle_status: string;
+  is_premium_active: boolean;
+  is_trial: boolean;
 }
 
 const API_BASE = 'http://localhost:3000';
@@ -28,10 +31,19 @@ const getAvailabilityColor = (status: string) => {
   }
 };
 
-const getHoursAgo = (dateString: string) => {
+const getIslandDisplayName = (islandCode: string) => {
+  switch (islandCode) {
+    case 'STT': return 'St. Thomas';
+    case 'STJ': return 'St. John';
+    case 'STX': return 'St. Croix';
+    default: return islandCode;
+  }
+};
+
+const getHoursAgo = (lastActiveAt: string) => {
   const now = new Date();
-  const date = new Date(dateString);
-  const diffMs = now.getTime() - date.getTime();
+  const lastActive = new Date(lastActiveAt);
+  const diffMs = now.getTime() - lastActive.getTime();
   const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
   return diffHours;
 };
@@ -54,28 +66,40 @@ export const Home: React.FC = () => {
   const [emergencyMode, setEmergencyMode] = useState({ enabled: false });
 
   useEffect(() => {
+    console.log('[DEBUG] Filters changed, fetching providers:', filters);
     fetchProviders(true);
     fetchEmergencyMode();
   }, [filters]);
 
   useEffect(() => {
     if (filters.island) {
+      console.log('[DEBUG] Island selected, fetching areas for:', filters.island);
       fetchAreas();
     } else {
+      console.log('[DEBUG] No island selected, clearing areas');
       setAvailableAreas([]);
       setFilters(prev => ({ ...prev, areaId: '' }));
     }
   }, [filters.island]);
 
   const fetchAreas = async () => {
+    console.log('[DEBUG] fetchAreas called for island:', filters.island);
     try {
-      const response = await fetch(`${API_BASE}/areas?island=${filters.island}`);
+      const url = `${API_BASE}/areas?island=${filters.island}`;
+      console.log('[DEBUG] Fetching areas from URL:', url);
+      
+      const response = await fetch(url);
+      console.log('[DEBUG] Areas response status:', response.status);
+      
       if (response.ok) {
         const areas = await response.json();
+        console.log('[DEBUG] Areas received:', areas);
         setAvailableAreas(areas);
+      } else {
+        console.error('[DEBUG] Failed to fetch areas, status:', response.status);
       }
     } catch (err) {
-      console.error('Failed to fetch areas');
+      console.error('[DEBUG] Error fetching areas:', err);
     }
   };
 
@@ -84,14 +108,18 @@ export const Home: React.FC = () => {
       const response = await fetch(`${API_BASE}/settings/emergency-mode`);
       if (response.ok) {
         const data = await response.json();
-        setEmergencyMode(data);
+        setEmergencyMode(data.data || { enabled: false });
+      } else {
+        setEmergencyMode({ enabled: false });
       }
     } catch (err) {
       console.error('Failed to fetch emergency mode');
+      setEmergencyMode({ enabled: false });
     }
   };
 
   const fetchProviders = async (reset = false) => {
+    console.log(`[DEBUG] fetchProviders called with reset=${reset}, current filters:`, filters);
     if (reset) {
       setLoading(true);
       setCursor(null);
@@ -109,31 +137,50 @@ export const Home: React.FC = () => {
       if (filters.areaId) params.append('areaId', filters.areaId);
       if (!reset && cursor) params.append('cursor', cursor);
 
-      const response = await fetch(`${API_BASE}/providers?${params}`);
+      const url = `${API_BASE}/providers?${params}`;
+      console.log('[DEBUG] Fetching providers from URL:', url);
+
+      const response = await fetch(url);
+      console.log('[DEBUG] Response status:', response.status);
+      
       if (!response.ok) throw new Error('Failed to fetch providers');
       const data = await response.json();
+      console.log('[DEBUG] Response data:', data);
       if (data.error) throw new Error(data.error);
 
       if (reset) {
         setProviders(data.data.providers);
+        console.log('[DEBUG] Set providers (reset):', data.data.providers.length, 'providers');
       } else {
-        setProviders(prev => [...prev, ...data.data.providers]);
+        setProviders(prev => {
+          const newProviders = [...prev, ...data.data.providers];
+          console.log('[DEBUG] Added providers (load more):', data.data.providers.length, 'new providers, total:', newProviders.length);
+          return newProviders;
+        });
       }
       setCursor(data.data.nextCursor);
       setHasMore(!!data.data.nextCursor);
       if (reset && data.data.providers.length === 0) {
         setSuggestions(data.data.suggestions || []);
+        console.log('[DEBUG] No providers found, set suggestions:', data.data.suggestions);
       }
     } catch (err) {
+      console.error('[DEBUG] Error fetching providers:', err);
       setError(err instanceof Error ? err.message : 'Unknown error');
     } finally {
       setLoading(false);
       setLoadingMore(false);
+      console.log('[DEBUG] fetchProviders completed');
     }
   };
 
   const handleFilterChange = (key: string, value: string) => {
-    setFilters(prev => ({ ...prev, [key]: value }));
+    console.log(`[DEBUG] Filter change: ${key} = "${value}"`);
+    setFilters(prev => {
+      const newFilters = { ...prev, [key]: value };
+      console.log('[DEBUG] New filters state:', newFilters);
+      return newFilters;
+    });
   };
 
   const applySuggestion = (patch: any) => {
@@ -165,12 +212,9 @@ export const Home: React.FC = () => {
               </svg>
             </div>
             <div className="ml-3">
-              <h3 className="text-sm font-medium text-yellow-800">
-                High demand — response times may be limited
-              </h3>
-              <div className="mt-2 text-sm text-yellow-700">
-                <p>Confirm details directly with providers. Emergency services are prioritized.</p>
-              </div>
+              <p className="text-sm text-yellow-700">
+                High demand — response times may be limited. Confirm details directly with the provider.
+              </p>
             </div>
           </div>
         </div>
@@ -242,6 +286,8 @@ export const Home: React.FC = () => {
         </div>
       )}
 
+      <DisclaimerNotice variant="compact" className="mb-6" />
+
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         {providers.map(provider => (
           <Card key={provider.id} className="hover:shadow-lg transition-shadow">
@@ -251,10 +297,13 @@ export const Home: React.FC = () => {
                 <Badge label="Inactive" variant="secondary" />
               )}
             </div>
-            <p className="text-gray-600 mb-2">{provider.island}</p>
+            <p className="text-gray-600 mb-2">{getIslandDisplayName(provider.island)}</p>
             <Badge label={provider.status} variant={getAvailabilityColor(provider.status)} className="mb-2" />
+            {provider.is_premium_active && (
+              <Badge label={provider.is_trial ? "Trial" : "Premium"} variant="success" className="mb-2 ml-2" />
+            )}
             <p className="text-sm text-gray-500 mb-4">
-              Last active: {provider.last_active_at ? `${getHoursAgo(provider.last_active_at)} hours ago` : 'Never'}
+              Activity: {provider.last_active_at ? `${getHoursAgo(provider.last_active_at)} hours ago` : 'Never'}
             </p>
             <div className="flex space-x-2">
               <Button href={`tel:${provider.phone}`}>Call</Button>

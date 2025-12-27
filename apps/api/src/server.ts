@@ -114,6 +114,13 @@ app.get('/areas', async (req: Request, res: Response) => {
     if (!island || typeof island !== 'string') {
       return res.status(400).json({ error: 'Island parameter required' });
     }
+    
+    // Validate island parameter
+    const validIslands = ['STT', 'STX', 'STJ'];
+    if (!validIslands.includes(island)) {
+      return res.status(400).json({ error: { code: 'INVALID_ISLAND', message: 'Island must be one of: STT, STX, STJ', fieldErrors: { island: 'Must be STT, STX, or STJ' } } });
+    }
+    
     const result = await pool.query(
       'SELECT id, name FROM areas WHERE island = $1 ORDER BY name',
       [island]
@@ -143,11 +150,17 @@ app.get('/providers', async (req: Request, res: Response) => {
       limit = Math.min(limitNum, 50);
     }
 
-    let cursor: { trust_score: number; last_active_at: string | null; status_last_updated_at: string; id: number } | null = null;
+    // Validate island parameter
+    const validIslands = ['STT', 'STX', 'STJ'];
+    if (island && typeof island === 'string' && !validIslands.includes(island)) {
+      return res.status(400).json({ error: { code: 'INVALID_ISLAND', message: 'Island must be one of: STT, STX, STJ', fieldErrors: { island: 'Must be STT, STX, or STJ' } } });
+    }
+
+    let cursor: { trust_tier: number; is_premium_active: boolean; emergency_boost_eligible: number; lifecycle_active: boolean; last_active_at: string | null; status_last_updated_at: string; id: number } | null = null;
     if (cursorParam) {
       try {
         cursor = JSON.parse(Buffer.from(cursorParam as string, 'base64').toString());
-        if (!cursor || typeof cursor.trust_score !== 'number' || typeof cursor.id !== 'number') throw new Error();
+        if (!cursor || typeof cursor.trust_tier !== 'number' || typeof cursor.id !== 'number') throw new Error();
       } catch {
         return res.status(400).json({ error: { code: 'INVALID_CURSOR', message: 'Invalid cursor format', fieldErrors: { cursor: 'Invalid base64 JSON' } } });
       }
@@ -156,20 +169,6 @@ app.get('/providers', async (req: Request, res: Response) => {
     let query = `
       SELECT p.*,
              (SELECT MAX(created_at) FROM activity_events WHERE provider_id = p.id) as last_active_at,
-             CASE
-               -- Verification badge weights (configurable)
-               WHEN EXISTS (SELECT 1 FROM provider_badges WHERE provider_id = p.id AND badge = 'GOV_APPROVED') THEN 300
-               WHEN EXISTS (SELECT 1 FROM provider_badges WHERE provider_id = p.id AND badge = 'EMERGENCY_READY') AND
-                    (p.plan = 'PREMIUM' AND (p.plan_source != 'TRIAL' OR p.trial_end_at > NOW())) THEN ${emergencyMode ? '400' : '200'}
-               WHEN EXISTS (SELECT 1 FROM provider_badges WHERE provider_id = p.id AND badge = 'VERIFIED') THEN 100
-               ELSE 0
-             END +
-             -- Plan weights (PREMIUM > FREE)
-             CASE WHEN p.plan = 'PREMIUM' AND (p.plan_source != 'TRIAL' OR p.trial_end_at > NOW()) THEN 50 ELSE 0 END +
-             -- Lifecycle status weights (ACTIVE > INACTIVE)
-             CASE WHEN p.lifecycle_status = 'ACTIVE' THEN 10 ELSE 0 END +
-             -- Disputed penalty (de-rank disputed providers)
-             CASE WHEN p.is_disputed THEN -1000 ELSE 0 END as trust_score,
              p.lifecycle_status,
              p.is_disputed,
              p.plan,
@@ -177,12 +176,28 @@ app.get('/providers', async (req: Request, res: Response) => {
              p.trial_end_at,
              (p.plan = 'PREMIUM' AND (p.plan_source != 'TRIAL' OR p.trial_end_at > NOW())) as is_premium_active,
              CASE WHEN p.trial_end_at > NOW() THEN CEIL(EXTRACT(EPOCH FROM (p.trial_end_at - NOW())) / 86400) ELSE 0 END as trial_days_left,
-             CASE WHEN p.plan_source = 'TRIAL' AND p.trial_end_at > NOW() THEN true ELSE false END as is_trial
+             CASE WHEN p.plan_source = 'TRIAL' AND p.trial_end_at > NOW() THEN true ELSE false END as is_trial,
+             -- Trust tier: GOV > VERIFIED > NONE
+             CASE
+               WHEN EXISTS (SELECT 1 FROM provider_badges WHERE provider_id = p.id AND badge = 'GOV_APPROVED') THEN 3
+               WHEN EXISTS (SELECT 1 FROM provider_badges WHERE provider_id = p.id AND badge = 'VERIFIED') THEN 2
+               ELSE 1
+             END as trust_tier,
+             -- Emergency boost eligibility (only for premium-active providers with EMERGENCY_READY)
+             CASE WHEN (p.plan = 'PREMIUM' AND (p.plan_source != 'TRIAL' OR p.trial_end_at > NOW())) AND
+                       EXISTS (SELECT 1 FROM provider_badges WHERE provider_id = p.id AND badge = 'EMERGENCY_READY')
+                  THEN 1 ELSE 0 END as emergency_boost_eligible
       FROM providers p
       WHERE p.lifecycle_status != 'ARCHIVED'
     `;
-    const params: any[] = [status];
-    let paramIndex = 2;
+    const params: any[] = [];
+    let paramIndex = 1;
+
+    if (status) {
+      query += ` AND p.status = $${paramIndex}`;
+      params.push(status);
+      paramIndex++;
+    }
 
     if (island) {
       query += ` AND p.island = $${paramIndex}`;
@@ -204,17 +219,23 @@ app.get('/providers', async (req: Request, res: Response) => {
 
     if (cursor) {
       query += ` AND (
-        trust_score < $${paramIndex} OR
-        (trust_score = $${paramIndex} AND (SELECT MAX(created_at) FROM activity_events WHERE provider_id = p.id) < $${paramIndex + 1}) OR
-        (trust_score = $${paramIndex} AND (SELECT MAX(created_at) FROM activity_events WHERE provider_id = p.id) = $${paramIndex + 1} AND p.status_last_updated_at < $${paramIndex + 2}) OR
-        (trust_score = $${paramIndex} AND (SELECT MAX(created_at) FROM activity_events WHERE provider_id = p.id) = $${paramIndex + 1} AND p.status_last_updated_at = $${paramIndex + 2} AND p.id > $${paramIndex + 3})
+        trust_tier < $${paramIndex} OR
+        (trust_tier = $${paramIndex} AND is_premium_active < $${paramIndex + 1}) OR
+        (trust_tier = $${paramIndex} AND is_premium_active = $${paramIndex + 1} AND emergency_boost_eligible < $${paramIndex + 2}) OR
+        (trust_tier = $${paramIndex} AND is_premium_active = $${paramIndex + 1} AND emergency_boost_eligible = $${paramIndex + 2} AND (p.lifecycle_status = 'ACTIVE') < $${paramIndex + 3}) OR
+        (trust_tier = $${paramIndex} AND is_premium_active = $${paramIndex + 1} AND emergency_boost_eligible = $${paramIndex + 2} AND (p.lifecycle_status = 'ACTIVE') = $${paramIndex + 3} AND (SELECT MAX(created_at) FROM activity_events WHERE provider_id = p.id) < $${paramIndex + 4}) OR
+        (trust_tier = $${paramIndex} AND is_premium_active = $${paramIndex + 1} AND emergency_boost_eligible = $${paramIndex + 2} AND (p.lifecycle_status = 'ACTIVE') = $${paramIndex + 3} AND (SELECT MAX(created_at) FROM activity_events WHERE provider_id = p.id) = $${paramIndex + 4} AND p.status_last_updated_at < $${paramIndex + 5}) OR
+        (trust_tier = $${paramIndex} AND is_premium_active = $${paramIndex + 1} AND emergency_boost_eligible = $${paramIndex + 2} AND (p.lifecycle_status = 'ACTIVE') = $${paramIndex + 3} AND (SELECT MAX(created_at) FROM activity_events WHERE provider_id = p.id) = $${paramIndex + 4} AND p.status_last_updated_at = $${paramIndex + 5} AND p.id > $${paramIndex + 6})
       )`;
-      params.push(cursor.trust_score, cursor.last_active_at, cursor.status_last_updated_at, cursor.id);
-      paramIndex += 4;
+      params.push(cursor.trust_tier, cursor.is_premium_active, cursor.emergency_boost_eligible, cursor.lifecycle_active, cursor.last_active_at, cursor.status_last_updated_at, cursor.id);
+      paramIndex += 7;
     }
 
-    query += ` ORDER BY trust_score DESC, 
-               (SELECT MAX(created_at) FROM activity_events WHERE provider_id = p.id) DESC NULLS LAST, 
+    query += ` ORDER BY trust_tier DESC,
+               is_premium_active DESC,
+               ${emergencyMode ? 'emergency_boost_eligible DESC,' : ''}
+               (p.lifecycle_status = 'ACTIVE') DESC,
+               (SELECT MAX(created_at) FROM activity_events WHERE provider_id = p.id) DESC NULLS LAST,
                p.status_last_updated_at DESC,
                p.id ASC
                LIMIT $${paramIndex}`;
@@ -227,7 +248,10 @@ app.get('/providers', async (req: Request, res: Response) => {
     if (hasMore && providers.length > 0) {
       const last = providers[providers.length - 1];
       nextCursor = Buffer.from(JSON.stringify({
-        trust_score: last.trust_score,
+        trust_tier: last.trust_tier,
+        is_premium_active: last.is_premium_active,
+        emergency_boost_eligible: last.emergency_boost_eligible,
+        lifecycle_active: last.lifecycle_status === 'ACTIVE',
         last_active_at: last.last_active_at,
         status_last_updated_at: last.status_last_updated_at,
         id: last.id
@@ -338,6 +362,13 @@ app.post('/providers', async (req, res) => {
     if (!name || !phone || !island) {
       return res.status(400).json({ error: 'Name, phone, and island are required' });
     }
+    
+    // Validate island parameter
+    const validIslands = ['STT', 'STX', 'STJ'];
+    if (!validIslands.includes(island)) {
+      return res.status(400).json({ error: { code: 'INVALID_ISLAND', message: 'Island must be one of: STT, STX, STJ', fieldErrors: { island: 'Must be STT, STX, or STJ' } } });
+    }
+    
     if (!Array.isArray(areas) || areas.length === 0) {
       return res.status(400).json({ error: 'At least one area is required' });
     }
@@ -430,6 +461,15 @@ app.put('/providers/:id', async (req, res) => {
     if (!Array.isArray(areas) || areas.length === 0) {
       return res.status(400).json({ error: 'At least one area is required' });
     }
+    
+    // Validate island parameter if provided
+    if (island !== undefined) {
+      const validIslands = ['STT', 'STX', 'STJ'];
+      if (!validIslands.includes(island)) {
+        return res.status(400).json({ error: { code: 'INVALID_ISLAND', message: 'Island must be one of: STT, STX, STJ', fieldErrors: { island: 'Must be STT, STX, or STJ' } } });
+      }
+    }
+    
     if (typeof contact_call_enabled === 'boolean' && typeof contact_whatsapp_enabled === 'boolean' && typeof contact_sms_enabled === 'boolean') {
       if (!contact_call_enabled && !contact_whatsapp_enabled && !contact_sms_enabled) {
         return res.status(400).json({ error: 'At least one contact method must be enabled' });
@@ -838,17 +878,30 @@ app.patch('/admin/reports/:id', adminAuth, async (req, res) => {
 app.get('/settings/emergency-mode', async (req, res) => {
   try {
     const result = await pool.query('SELECT value FROM app_settings WHERE key = $1', ['emergency_mode']);
-    const emergencyMode = result.rows[0]?.value || { enabled: false };
-    res.json(emergencyMode);
+    const emergencyMode = result.rows[0]?.value?.enabled || false;
+    // Return both old and new format for backward compatibility
+    res.json({
+      enabled: emergencyMode,
+      data: { enabled: emergencyMode },
+      error: null
+    });
   } catch (error) {
     console.error(error);
-    res.status(500).json({ error: 'Internal server error' });
+    res.status(500).json({
+      enabled: false,
+      data: null,
+      error: 'Internal server error'
+    });
   }
 });
 
 app.patch('/admin/settings/emergency-mode', adminAuth, async (req, res) => {
   try {
     const { enabled, notes } = req.body;
+
+    // Get current state for logging
+    const currentResult = await pool.query('SELECT value FROM app_settings WHERE key = $1', ['emergency_mode']);
+    const currentEnabled = currentResult.rows[0]?.value?.enabled || false;
 
     await pool.query(`
       UPDATE app_settings
@@ -860,13 +913,17 @@ app.patch('/admin/settings/emergency-mode', adminAuth, async (req, res) => {
     await AuditService.log({
       actionType: 'EMERGENCY_MODE_TOGGLED',
       adminActor: req.adminActor!,
-      notes: notes || `Emergency mode ${enabled ? 'enabled' : 'disabled'} by admin`
+      notes: `enabled: ${currentEnabled} -> ${enabled}${notes ? ` (${notes})` : ''}`
     });
 
-    res.json({ message: `Emergency mode ${enabled ? 'enabled' : 'disabled'}` });
+    res.json({
+      enabled,
+      data: { enabled },
+      error: null
+    });
   } catch (error) {
     console.error(error);
-    res.status(500).json({ error: 'Internal server error' });
+    res.status(500).json({ data: null, error: 'Internal server error' });
   }
 });
 

@@ -62,6 +62,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Comprehensive test coverage (54/54 tests passing)
 
 ### Fixed
+- **Island Filtering Bug**: Resolved critical data consistency issue preventing island-based provider filtering
+  - **Root Cause**: Database contained full island names ("St. Thomas") while API expected canonical codes ("STT")
+  - **Database Migration**: Applied `009_add_contact_preferences.sql` to convert existing provider island values to canonical codes
+  - **API Validation**: Added island code validation to both provider creation and update endpoints
+  - **Frontend Display**: Added `getIslandDisplayName()` function to show user-friendly names while using canonical codes internally
+  - **Test Updates**: Updated all test data to use canonical island codes (STT/STJ/STX)
+  - **Prevention**: Island validation now prevents future data inconsistency issues
+
 - **TypeScript Compilation Errors**: Resolved all TypeScript errors across the codebase
   - Fixed mock typing issues in test files by casting `global.prompt` and `global.confirm` as `any`
   - Removed unused imports (`act` from `@testing-library/react`)

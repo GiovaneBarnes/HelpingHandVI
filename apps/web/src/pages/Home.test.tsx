@@ -30,7 +30,7 @@ describe('Home', () => {
                   id: 1,
                   name: 'John Doe',
                   phone: '123-456-7890',
-                  island: 'St. John',
+                  island: 'STJ',
                   status: 'TODAY',
                   last_active_at: new Date().toISOString(),
                   lifecycle_status: 'ACTIVE',
@@ -42,7 +42,7 @@ describe('Home', () => {
                   id: 2,
                   name: 'Jane Smith',
                   phone: '098-765-4321',
-                  island: 'St. Thomas',
+                  island: 'STT',
                   status: 'NEXT_3_DAYS',
                   last_active_at: new Date().toISOString(),
                   lifecycle_status: 'ACTIVE',
@@ -127,7 +127,7 @@ describe('Home', () => {
                   id: 1,
                   name: 'Trial Provider',
                   phone: '123-456-7890',
-                  island: 'St. John',
+                  island: 'STJ',
                   status: 'TODAY',
                   last_active_at: new Date().toISOString(),
                   lifecycle_status: 'ACTIVE',
@@ -183,7 +183,7 @@ describe('Home', () => {
                   id: 1,
                   name: 'John Doe',
                   phone: '123-456-7890',
-                  island: 'St. John',
+                  island: 'STJ',
                   status: 'TODAY',
                   last_active_at: new Date().toISOString(),
                   lifecycle_status: 'ACTIVE',
@@ -309,7 +309,7 @@ describe('Home', () => {
                   id: 1,
                   name: 'Inactive Provider',
                   phone: '123-456-7890',
-                  island: 'St. John',
+                  island: 'STJ',
                   status: 'TODAY',
                   last_active_at: new Date().toISOString(),
                   lifecycle_status: 'INACTIVE',
@@ -352,7 +352,7 @@ describe('Home', () => {
                   id: 1,
                   name: 'John Doe',
                   phone: '123-456-7890',
-                  island: 'St. John',
+                  island: 'STJ',
                   status: 'TODAY',
                   last_active_at: new Date().toISOString(),
                   lifecycle_status: 'ACTIVE',
@@ -395,7 +395,7 @@ describe('Home', () => {
                   id: 1,
                   name: 'John Doe',
                   phone: '123-456-7890',
-                  island: 'St. John',
+                  island: 'STJ',
                   status: 'TODAY',
                   last_active_at: new Date().toISOString(),
                   lifecycle_status: 'ACTIVE',
@@ -437,7 +437,7 @@ describe('Home', () => {
                   id: 1,
                   name: 'John Doe',
                   phone: '123-456-7890',
-                  island: 'St. John',
+                  island: 'STJ',
                   status: 'TODAY',
                   last_active_at: new Date().toISOString(),
                   lifecycle_status: 'ACTIVE',
@@ -449,7 +449,7 @@ describe('Home', () => {
                   id: 2,
                   name: 'Jane Smith',
                   phone: '098-765-4321',
-                  island: 'St. Thomas',
+                  island: 'STT',
                   status: 'NEXT_3_DAYS',
                   last_active_at: new Date().toISOString(),
                   lifecycle_status: 'ACTIVE',
@@ -506,7 +506,7 @@ describe('Home', () => {
                   id: 1,
                   name: 'John Doe',
                   phone: '123-456-7890',
-                  island: 'St. John',
+                  island: 'STJ',
                   status: 'TODAY',
                   last_active_at: new Date().toISOString(),
                   lifecycle_status: 'ACTIVE',
@@ -566,7 +566,7 @@ describe('Home', () => {
                   id: 1,
                   name: 'Active Provider',
                   phone: '123-456-7890',
-                  island: 'St. John',
+                  island: 'STJ',
                   status: 'TODAY',
                   last_active_at: fiveHoursAgo,
                   lifecycle_status: 'ACTIVE',
@@ -578,7 +578,7 @@ describe('Home', () => {
                   id: 2,
                   name: 'Never Active Provider',
                   phone: '098-765-4321',
-                  island: 'St. Thomas',
+                  island: 'STT',
                   status: 'NEXT_3_DAYS',
                   last_active_at: null,
                   lifecycle_status: 'ACTIVE',
@@ -623,7 +623,7 @@ describe('Home', () => {
                   name: 'Provider with WhatsApp',
                   phone: '123-456-7890',
                   whatsapp: '1234567890',
-                  island: 'St. John',
+                  island: 'STJ',
                   status: 'TODAY',
                   last_active_at: new Date().toISOString(),
                   lifecycle_status: 'ACTIVE',
@@ -636,7 +636,7 @@ describe('Home', () => {
                   name: 'Provider without WhatsApp',
                   phone: '098-765-4321',
                   whatsapp: null,
-                  island: 'St. Thomas',
+                  island: 'STT',
                   status: 'NEXT_3_DAYS',
                   last_active_at: new Date().toISOString(),
                   lifecycle_status: 'ACTIVE',
@@ -701,7 +701,7 @@ describe('Home', () => {
                   id: 1,
                   name: 'John Doe',
                   phone: '123-456-7890',
-                  island: 'St. John',
+                  island: 'STJ',
                   status: 'TODAY',
                   last_active_at: new Date().toISOString(),
                   lifecycle_status: 'ACTIVE',
@@ -749,7 +749,7 @@ describe('Home', () => {
                   id: 1,
                   name: 'John Doe',
                   phone: '123-456-7890',
-                  island: 'St. John',
+                  island: 'STJ',
                   status: 'TODAY',
                   last_active_at: new Date().toISOString(),
                   lifecycle_status: 'ACTIVE',
@@ -823,5 +823,94 @@ describe('Home', () => {
 
     // Should trigger a re-fetch and show loading state
     expect(screen.getByText('Loading...')).toBeInTheDocument();
+  });
+
+  it('filters by island using canonical codes', async () => {
+    fetchMock.mockImplementation((url: string) => {
+      if (url.includes('/settings/emergency-mode')) {
+        return Promise.resolve({
+          ok: true,
+          json: () => Promise.resolve({ enabled: false })
+        });
+      } else if (url.includes('/providers?island=STT')) {
+        return Promise.resolve({
+          ok: true,
+          json: () => Promise.resolve({
+            data: {
+              providers: [
+                {
+                  id: 2,
+                  name: 'Jane Smith',
+                  phone: '098-765-4321',
+                  island: 'STT',
+                  status: 'NEXT_3_DAYS',
+                  last_active_at: new Date().toISOString(),
+                  lifecycle_status: 'ACTIVE',
+                  is_premium_active: true,
+                  is_trial: false,
+                  profile: {}
+                }
+              ],
+              nextCursor: null,
+              hasMore: false
+            }
+          })
+        });
+      } else if (url.includes('/providers') && !url.includes('island=')) {
+        return Promise.resolve({
+          ok: true,
+          json: () => Promise.resolve({
+            data: {
+              providers: [
+                {
+                  id: 1,
+                  name: 'John Doe',
+                  phone: '123-456-7890',
+                  island: 'STJ',
+                  status: 'TODAY',
+                  last_active_at: new Date().toISOString(),
+                  lifecycle_status: 'ACTIVE',
+                  is_premium_active: false,
+                  is_trial: false,
+                  profile: {}
+                },
+                {
+                  id: 2,
+                  name: 'Jane Smith',
+                  phone: '098-765-4321',
+                  island: 'STT',
+                  status: 'NEXT_3_DAYS',
+                  last_active_at: new Date().toISOString(),
+                  lifecycle_status: 'ACTIVE',
+                  is_premium_active: true,
+                  is_trial: false,
+                  profile: {}
+                }
+              ],
+              nextCursor: null,
+              hasMore: false
+            }
+          })
+        });
+      }
+      return Promise.reject(new Error('Unexpected URL'));
+    });
+
+    renderHome();
+
+    await waitFor(() => {
+      expect(screen.getByText('John Doe')).toBeInTheDocument();
+      expect(screen.getByText('Jane Smith')).toBeInTheDocument();
+    });
+
+    // Select St. Thomas (STT)
+    const islandSelect = screen.getByDisplayValue('All Islands');
+    fireEvent.change(islandSelect, { target: { value: 'STT' } });
+
+    // Should show only Jane Smith (St. Thomas)
+    await waitFor(() => {
+      expect(screen.queryByText('John Doe')).not.toBeInTheDocument();
+      expect(screen.getByText('Jane Smith')).toBeInTheDocument();
+    });
   });
 });

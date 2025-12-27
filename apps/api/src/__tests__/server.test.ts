@@ -61,15 +61,49 @@ describe('GET /providers', () => {
   });
 
   it('should handle cursor pagination', async () => {
-    const cursor = Buffer.from(JSON.stringify({ trust_score: 100, last_active_at: '2023-01-01T00:00:00Z', status_last_updated_at: '2023-01-01T00:00:00Z', id: 1 })).toString('base64');
-    const mockProviders = [{ id: 2, trust_score: 90 }];
+    const cursor = Buffer.from(JSON.stringify({
+      trust_tier: 2,
+      is_premium_active: true,
+      emergency_boost_eligible: 0,
+      lifecycle_active: true,
+      last_active_at: '2023-01-01T00:00:00Z',
+      status_last_updated_at: '2023-01-01T00:00:00Z',
+      id: 1
+    })).toString('base64');
+    const mockProviders = [{
+      id: 2,
+      name: 'Provider 2',
+      phone: '123-456-7890',
+      whatsapp: null,
+      island: 'St. John',
+      profile: {},
+      status: 'AVAILABLE',
+      last_updated_at: '2023-01-01T00:00:00Z',
+      created_at: '2023-01-01T00:00:00Z',
+      plan: 'FREE',
+      trial_start_at: null,
+      trial_end_at: null,
+      lifecycle_status: 'ACTIVE',
+      archived_at: null,
+      status_last_updated_at: '2023-01-01T00:00:00Z',
+      is_disputed: false,
+      disputed_at: null,
+      plan_source: 'FREE',
+      last_active_at: '2023-01-01T00:00:00Z',
+      trust_tier: 1,
+      emergency_boost_eligible: 0,
+      lifecycle_active: true,
+      is_premium_active: false,
+      trial_days_left: 0,
+      is_trial: false
+    }];
     (mockPool.query as jest.Mock).mockResolvedValue({ rows: mockProviders });
 
     const response = await request(app).get(`/providers?cursor=${cursor}`);
 
     expect(response.status).toBe(200);
     expect(mockPool.query).toHaveBeenCalledWith(
-      expect.stringContaining('trust_score < $'),
+      expect.stringContaining('trust_tier < $'),
       expect.any(Array)
     );
   });
@@ -84,7 +118,7 @@ describe('GET /providers', () => {
   it('should generate suggestions when no results', async () => {
     (mockPool.query as jest.Mock).mockResolvedValue({ rows: [] });
 
-    const response = await request(app).get('/providers?status=TODAY&island=St.+Thomas');
+    const response = await request(app).get('/providers?status=TODAY&island=STT');
 
     expect(response.status).toBe(200);
     expect(response.body.data.providers).toHaveLength(0);
@@ -105,6 +139,36 @@ describe('GET /providers', () => {
       expect.stringContaining("p.lifecycle_status != 'ARCHIVED'"),
       expect.any(Array)
     );
+  });
+
+  it('should filter by valid island codes', async () => {
+    const mockProviders = [
+      { id: 1, name: 'STT Provider', island: 'STT', trust_score: 100 }
+    ];
+    (mockPool.query as jest.Mock).mockResolvedValue({ rows: mockProviders });
+
+    const response = await request(app).get('/providers?island=STT');
+
+    expect(response.status).toBe(200);
+    expect(mockPool.query).toHaveBeenCalledWith(
+      expect.stringContaining('p.island = $'),
+      expect.arrayContaining(['STT'])
+    );
+  });
+
+  it('should return 400 for invalid island code', async () => {
+    const response = await request(app).get('/providers?island=St.+Thomas');
+
+    expect(response.status).toBe(400);
+    expect(response.body.error.code).toBe('INVALID_ISLAND');
+    expect(response.body.error.message).toBe('Island must be one of: STT, STX, STJ');
+  });
+
+  it('should return 400 for invalid island code in areas endpoint', async () => {
+    const response = await request(app).get('/areas?island=St.+Thomas');
+
+    expect(response.status).toBe(400);
+    expect(response.body.error.code).toBe('INVALID_ISLAND');
   });
 });
 
@@ -164,9 +228,9 @@ describe('PUT /providers/:id', () => {
       .send({
         name: 'Updated Name',
         phone: '123-456-7890',
-        island: 'St. Thomas',
+        island: 'STT',
         categories: ['Electrician'],
-        areas: [{ island: 'St. Thomas', neighborhood: 'Charlotte Amalie' }]
+        areas: [{ island: 'STT', neighborhood: 'Charlotte Amalie' }]
       });
 
     expect(response.status).toBe(200);
@@ -577,42 +641,221 @@ describe('Premium ranking boost', () => {
     jest.clearAllMocks();
   });
 
-  it('should give premium providers ranking boost', async () => {
-    // Mock emergency mode query
-    (mockPool.query as jest.Mock)
-      .mockResolvedValueOnce({ rows: [{ value: { enabled: false } }] })
-      .mockResolvedValueOnce({ rows: [
+  describe('Premium Visibility within Trust Tiers', () => {
+    it('should rank premium providers higher within the same trust tier', async () => {
+      // Mock emergency mode query
+      (mockPool.query as jest.Mock)
+        .mockResolvedValueOnce({ rows: [{ value: { enabled: false } }] })
+        .mockResolvedValueOnce({ rows: [
+          {
+            id: 1,
+            name: 'Premium Provider',
+            phone: '123-456-7890',
+            whatsapp: null,
+            island: 'St. John',
+            profile: {},
+            status: 'AVAILABLE',
+            last_updated_at: '2023-01-01T00:00:00Z',
+            created_at: '2023-01-01T00:00:00Z',
+            plan: 'PREMIUM',
+            trial_start_at: null,
+            trial_end_at: null,
+            lifecycle_status: 'ACTIVE',
+            archived_at: null,
+            status_last_updated_at: '2023-01-01T00:00:00Z',
+            is_disputed: false,
+            disputed_at: null,
+            plan_source: 'PAID',
+            last_active_at: null,
+            trust_tier: 1, // NONE tier
+            emergency_boost_eligible: false,
+            lifecycle_active: true,
+            is_premium_active: true,
+            trial_days_left: 0,
+            is_trial: false
+          },
+          {
+            id: 2,
+            name: 'Free Provider',
+            phone: '098-765-4321',
+            whatsapp: null,
+            island: 'St. Thomas',
+            profile: {},
+            status: 'AVAILABLE',
+            last_updated_at: '2023-01-01T00:00:00Z',
+            created_at: '2023-01-01T00:00:00Z',
+            plan: 'FREE',
+            trial_start_at: null,
+            trial_end_at: null,
+            lifecycle_status: 'ACTIVE',
+            archived_at: null,
+            status_last_updated_at: '2023-01-01T00:00:00Z',
+            is_disputed: false,
+            disputed_at: null,
+            plan_source: 'FREE',
+            last_active_at: null,
+            trust_tier: 1, // NONE tier
+            emergency_boost_eligible: false,
+            lifecycle_active: true,
+            is_premium_active: false,
+            trial_days_left: 0,
+            is_trial: false
+          }
+        ] });
+
+      const response = await request(app).get('/providers');
+
+      expect(response.status).toBe(200);
+      expect(response.body.data.providers[0].name).toBe('Premium Provider'); // Should rank higher within same tier
+      expect(response.body.data.providers[1].name).toBe('Free Provider');
+    });
+
+    it('should rank trust tiers correctly regardless of premium status', async () => {
+      // Mock emergency mode query
+      (mockPool.query as jest.Mock)
+        .mockResolvedValueOnce({ rows: [{ value: { enabled: false } }] })
+        .mockResolvedValueOnce({ rows: [
+          {
+            id: 1,
+            name: 'Free GOV Provider',
+            phone: '111-111-1111',
+            whatsapp: null,
+            island: 'St. Croix',
+            profile: {},
+            status: 'AVAILABLE',
+            last_updated_at: '2023-01-01T00:00:00Z',
+            created_at: '2023-01-01T00:00:00Z',
+            plan: 'FREE',
+            trial_start_at: null,
+            trial_end_at: null,
+            lifecycle_status: 'ACTIVE',
+            archived_at: null,
+            status_last_updated_at: '2023-01-01T00:00:00Z',
+            is_disputed: false,
+            disputed_at: null,
+            plan_source: 'FREE',
+            last_active_at: null,
+            trust_tier: 3, // GOV tier
+            emergency_boost_eligible: false,
+            lifecycle_active: true,
+            is_premium_active: false,
+            trial_days_left: 0,
+            is_trial: false
+          },
+          {
+            id: 2,
+            name: 'Premium NONE Provider',
+            phone: '222-222-2222',
+            whatsapp: null,
+            island: 'St. John',
+            profile: {},
+            status: 'AVAILABLE',
+            last_updated_at: '2023-01-01T00:00:00Z',
+            created_at: '2023-01-01T00:00:00Z',
+            plan: 'PREMIUM',
+            trial_start_at: null,
+            trial_end_at: null,
+            lifecycle_status: 'ACTIVE',
+            archived_at: null,
+            status_last_updated_at: '2023-01-01T00:00:00Z',
+            is_disputed: false,
+            disputed_at: null,
+            plan_source: 'PAID',
+            last_active_at: null,
+            trust_tier: 1, // NONE tier
+            emergency_boost_eligible: false,
+            lifecycle_active: true,
+            is_premium_active: true,
+            trial_days_left: 0,
+            is_trial: false
+          }
+        ] });
+
+      const response = await request(app).get('/providers');
+
+      expect(response.status).toBe(200);
+      expect(response.body.data.providers[0].name).toBe('Free GOV Provider'); // GOV tier ranks highest
+      expect(response.body.data.providers[1].name).toBe('Premium NONE Provider');
+    });
+
+    it('should boost premium providers with EMERGENCY_READY in emergency mode', async () => {
+      // Mock emergency mode query
+      (mockPool.query as jest.Mock)
+        .mockResolvedValueOnce({ rows: [{ value: { enabled: true } }] })
+        .mockResolvedValueOnce({ rows: [
+          {
+            id: 1,
+            name: 'Premium EMERGENCY_READY',
+            phone: '111-111-1111',
+            whatsapp: null,
+            island: 'St. Croix',
+            profile: {},
+            status: 'AVAILABLE',
+            last_updated_at: '2023-01-01T00:00:00Z',
+            created_at: '2023-01-01T00:00:00Z',
+            plan: 'PREMIUM',
+            trial_start_at: null,
+            trial_end_at: null,
+            lifecycle_status: 'ACTIVE',
+            archived_at: null,
+            status_last_updated_at: '2023-01-01T00:00:00Z',
+            is_disputed: false,
+            disputed_at: null,
+            plan_source: 'PAID',
+            last_active_at: null,
+            trust_tier: 2, // VERIFIED tier
+            emergency_boost_eligible: true,
+            lifecycle_active: true,
+            is_premium_active: true,
+            trial_days_left: 0,
+            is_trial: false
+          },
+          {
+            id: 2,
+            name: 'Premium VERIFIED (no emergency)',
+            phone: '222-222-2222',
+            whatsapp: null,
+            island: 'St. John',
+            profile: {},
+            status: 'AVAILABLE',
+            last_updated_at: '2023-01-01T00:00:00Z',
+            created_at: '2023-01-01T00:00:00Z',
+            plan: 'PREMIUM',
+            trial_start_at: null,
+            trial_end_at: null,
+            lifecycle_status: 'ACTIVE',
+            archived_at: null,
+            status_last_updated_at: '2023-01-01T00:00:00Z',
+            is_disputed: false,
+            disputed_at: null,
+            plan_source: 'PAID',
+            last_active_at: null,
+            trust_tier: 2, // VERIFIED tier
+            emergency_boost_eligible: false,
+            lifecycle_active: true,
+            is_premium_active: true,
+            trial_days_left: 0,
+            is_trial: false
+          }
+        ] });
+
+      const response = await request(app).get('/providers?emergency=true');
+
+      expect(response.status).toBe(200);
+      expect(response.body.data.providers[0].name).toBe('Premium EMERGENCY_READY'); // Should rank higher in emergency mode
+      expect(response.body.data.providers[1].name).toBe('Premium VERIFIED (no emergency)');
+    });
+  });
+
+  describe('Activity Guardrails', () => {
+    it('should ignore activity-based filter parameters', async () => {
+      const mockProviders = [
         {
           id: 1,
-          name: 'Premium Provider',
+          name: 'Provider 1',
           phone: '123-456-7890',
           whatsapp: null,
-          island: 'St. Thomas',
-          profile: {},
-          status: 'AVAILABLE',
-          last_updated_at: '2023-01-01T00:00:00Z',
-          created_at: '2023-01-01T00:00:00Z',
-          plan: 'PREMIUM',
-          trial_start_at: '2023-01-01T00:00:00Z',
-          trial_end_at: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(), // 1 day left
-          lifecycle_status: 'ACTIVE',
-          archived_at: null,
-          status_last_updated_at: '2023-01-01T00:00:00Z',
-          is_disputed: false,
-          disputed_at: null,
-          plan_source: 'TRIAL',
-          last_active_at: null,
-          trust_score: 150, // 100 base + 50 premium boost
-          is_premium_active: true,
-          trial_days_left: 1,
-          is_trial: true
-        },
-        {
-          id: 2,
-          name: 'Free Provider',
-          phone: '098-765-4321',
-          whatsapp: null,
-          island: 'St. Thomas',
+          island: 'St. John',
           profile: {},
           status: 'AVAILABLE',
           last_updated_at: '2023-01-01T00:00:00Z',
@@ -626,18 +869,66 @@ describe('Premium ranking boost', () => {
           is_disputed: false,
           disputed_at: null,
           plan_source: 'FREE',
-          last_active_at: null,
-          trust_score: 100, // 100 base, no premium boost
+          last_active_at: '2023-01-01T00:00:00Z',
+          trust_tier: 1,
+          emergency_boost_eligible: false,
+          lifecycle_active: true,
           is_premium_active: false,
           trial_days_left: 0,
           is_trial: false
         }
-      ] });
+      ];
+      (mockPool.query as jest.Mock).mockResolvedValue({ rows: mockProviders });
 
-    const response = await request(app).get('/providers');
+      // Test various activity-based parameter names that should be ignored
+      const response = await request(app).get('/providers?activeWithinHours=24&recentlyActive=true&lastActivity=1day');
 
-    expect(response.status).toBe(200);
-    expect(response.body.data.providers[0].name).toBe('Premium Provider'); // Should rank higher
-    expect(response.body.data.providers[1].name).toBe('Free Provider');
+      expect(response.status).toBe(200);
+      expect(response.body.data.providers).toHaveLength(1);
+      // The query should not include these parameters in filtering
+      expect(mockPool.query).toHaveBeenCalledWith(
+        expect.stringContaining('WHERE p.lifecycle_status != \'ARCHIVED\''),
+        expect.any(Array)
+      );
+    });
+
+    it('should return last_active_at in provider data', async () => {
+      const mockProviders = [
+        {
+          id: 1,
+          name: 'Provider 1',
+          phone: '123-456-7890',
+          whatsapp: null,
+          island: 'St. John',
+          profile: {},
+          status: 'AVAILABLE',
+          last_updated_at: '2023-01-01T00:00:00Z',
+          created_at: '2023-01-01T00:00:00Z',
+          plan: 'FREE',
+          trial_start_at: null,
+          trial_end_at: null,
+          lifecycle_status: 'ACTIVE',
+          archived_at: null,
+          status_last_updated_at: '2023-01-01T00:00:00Z',
+          is_disputed: false,
+          disputed_at: null,
+          plan_source: 'FREE',
+          last_active_at: '2023-12-24T10:00:00Z',
+          trust_tier: 1,
+          emergency_boost_eligible: false,
+          lifecycle_active: true,
+          is_premium_active: false,
+          trial_days_left: 0,
+          is_trial: false
+        }
+      ];
+      (mockPool.query as jest.Mock).mockResolvedValue({ rows: mockProviders });
+
+      const response = await request(app).get('/providers');
+
+      expect(response.status).toBe(200);
+      expect(response.body.data.providers[0]).toHaveProperty('last_active_at');
+      expect(response.body.data.providers[0].last_active_at).toBe('2023-12-24T10:00:00Z');
+    });
   });
 });

@@ -16,6 +16,11 @@ UPDATE areas SET island = 'STJ' WHERE island = 'St. John';
 UPDATE areas SET island = 'STX' WHERE island = 'St. Croix';
 UPDATE areas SET island = 'STT' WHERE island = 'Water Island'; -- Water Island belongs to STT
 
+-- Update providers table to use canonical island codes
+UPDATE providers SET island = 'STT' WHERE island = 'St. Thomas';
+UPDATE providers SET island = 'STJ' WHERE island = 'St. John';
+UPDATE providers SET island = 'STX' WHERE island = 'St. Croix';
+
 -- Add indexes for search performance
 CREATE INDEX idx_areas_island_name ON areas(island, name);
 CREATE INDEX idx_provider_areas_area_id_provider_id ON provider_areas(area_id, provider_id);

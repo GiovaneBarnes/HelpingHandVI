@@ -1,8 +1,8 @@
 -- Seed sample providers
 INSERT INTO providers (name, phone, whatsapp, island, profile, status) VALUES
-('John Electric', '340-123-4567', '340-123-4567', 'St. Thomas', '{"experience": "10 years", "certified": true}', 'TODAY'),
-('Mary Plumbing', '340-234-5678', '340-234-5678', 'St. John', '{"specialties": ["residential", "commercial"]}', 'NEXT_3_DAYS'),
-('Bob AC Services', '340-345-6789', NULL, 'St. Croix', '{"emergency_service": true}', 'THIS_WEEK');
+('John Electric', '340-123-4567', '340-123-4567', 'STT', '{"experience": "10 years", "certified": true}', 'TODAY'),
+('Mary Plumbing', '340-234-5678', '340-234-5678', 'STJ', '{"specialties": ["residential", "commercial"]}', 'NEXT_3_DAYS'),
+('Bob AC Services', '340-345-6789', NULL, 'STX', '{"emergency_service": true}', 'THIS_WEEK');
 
 -- Assign categories to providers
 INSERT INTO provider_categories (provider_id, category_id) VALUES
