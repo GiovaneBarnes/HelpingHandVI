@@ -99,7 +99,12 @@ const adminAuth = (req: Request, res: Response, next: NextFunction) => {
 export { adminAuth };
 
 app.use(cors({
-  origin: ['http://localhost:5173', 'http://localhost:5174'], // allow web app on common dev ports
+  origin: [
+    'http://localhost:5173',
+    'http://localhost:5174',
+    'http://192.168.1.245:5173',
+    'http://192.168.1.245:5174'
+  ], // allow web app on common dev ports and network IPs
 }));
 
 app.use(express.json());
@@ -928,7 +933,8 @@ app.patch('/admin/settings/emergency-mode', adminAuth, async (req, res) => {
 });
 
 if (process.env.NODE_ENV !== 'test') {
-  app.listen(port, () => {
-    console.log(`Server running on port ${port}`);
+  app.listen(port, '0.0.0.0', () => {
+    console.log(`Server running on http://0.0.0.0:${port}`);
+    console.log(`Accessible at http://localhost:${port} and http://192.168.1.245:${port}`);
   });
 }

@@ -26,7 +26,16 @@ interface Provider {
   areas: Array<{ id: number; name: string; island: string }>;
 }
 
-const API_BASE = 'http://localhost:3000';
+const API_BASE = `${window.location.protocol}//${window.location.hostname}:3000`;
+
+const getIslandDisplayName = (islandCode: string) => {
+  switch (islandCode) {
+    case 'STT': return 'St. Thomas';
+    case 'STJ': return 'St. John';
+    case 'STX': return 'St. Croix';
+    default: return islandCode;
+  }
+};
 
 const getAvailabilityColor = (status: string) => {
   switch (status) {
@@ -101,7 +110,7 @@ export const ProviderDetail: React.FC = () => {
       ) : provider ? (
         <Card className="max-w-2xl mx-auto">
           <h1 className="text-3xl font-bold mb-4">{provider.name}</h1>
-          <p className="text-gray-600 mb-2">{provider.island}</p>
+          <p className="text-gray-600 mb-2">{getIslandDisplayName(provider.island)}</p>
           <Badge label={provider.status} variant={getAvailabilityColor(provider.status)} className="mb-4" />
           {provider.is_premium_active && (
             <Badge label={provider.is_trial ? "Trial" : "Premium"} variant="success" className="mb-4 ml-2" />

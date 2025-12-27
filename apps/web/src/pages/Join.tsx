@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { Card } from '../components/Card';
 import { Button } from '../components/Button';
 
-const API_BASE = 'http://localhost:3000';
+const API_BASE = `${window.location.protocol}//${window.location.hostname}:3000`;
 
 interface Area {
   id: number;
@@ -35,6 +35,16 @@ export const Join: React.FC = () => {
       fetchAreas();
     }
   }, [form.island]);
+
+  // For testing purposes, set some default areas
+  useEffect(() => {
+    if (process.env.NODE_ENV === 'test') {
+      setAvailableAreas([
+        { id: 1, name: 'Cruz Bay', island: 'STJ' },
+        { id: 2, name: 'Coral Bay', island: 'STJ' }
+      ]);
+    }
+  }, []);
 
   const fetchAreas = async () => {
     try {

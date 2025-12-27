@@ -29,7 +29,7 @@ describe('Dashboard', () => {
     name: 'John Doe',
     phone: '123-456-7890',
     whatsapp: '',
-    island: 'St. Thomas',
+    island: 'STT',
     status: 'TODAY',
     plan: 'FREE',
     plan_source: 'FREE',
@@ -37,7 +37,7 @@ describe('Dashboard', () => {
     trial_days_left: 0,
     is_trial: false,
     categories: ['Electrician'],
-    areas: [{ id: 1, name: 'Area 1', island: 'St. Thomas' }],
+    areas: [{ id: 1, name: 'Area 1', island: 'STT' }],
     contact_call_enabled: true,
     contact_whatsapp_enabled: false,
     contact_sms_enabled: false,
@@ -47,8 +47,8 @@ describe('Dashboard', () => {
   };
 
   const mockAreas = [
-    { id: 1, name: 'Area 1', island: 'St. Thomas' },
-    { id: 2, name: 'Area 2', island: 'St. Thomas' },
+    { id: 1, name: 'Area 1', island: 'STT' },
+    { id: 2, name: 'Area 2', island: 'STT' },
   ];
 
   beforeEach(() => {

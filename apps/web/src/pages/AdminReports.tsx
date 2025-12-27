@@ -14,7 +14,7 @@ interface Report {
   updated_at: string;
 }
 
-const API_BASE = 'http://localhost:3000';
+const API_BASE = `${window.location.protocol}//${window.location.hostname}:3000`;
 const ADMIN_KEY = 'admin-secret'; // In real app, from env
 
 export const AdminReports: React.FC = () => {
@@ -92,7 +92,15 @@ export const AdminReports: React.FC = () => {
 
   return (
     <div className="container mx-auto px-4 py-8">
-      <h1 className="text-3xl font-bold mb-8">Admin - Reports</h1>
+      <h1 className="text-3xl font-bold mb-4">Admin - Reports</h1>
+      
+      <div className="mb-8">
+        <nav className="flex space-x-4">
+          <a href="/admin/providers" className="text-blue-600 hover:underline">Providers</a>
+          <a href="/admin/reports" className="text-blue-600 hover:underline">Reports</a>
+          <a href="/admin/settings" className="text-blue-600 hover:underline">Settings</a>
+        </nav>
+      </div>
 
       <div className="mb-8 grid grid-cols-1 md:grid-cols-2 gap-4">
         <select

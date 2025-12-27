@@ -19,7 +19,7 @@ interface Provider {
   is_trial: boolean;
 }
 
-const API_BASE = 'http://localhost:3000';
+const API_BASE = `${window.location.protocol}//${window.location.hostname}:3000`;
 
 const getAvailabilityColor = (status: string) => {
   switch (status) {

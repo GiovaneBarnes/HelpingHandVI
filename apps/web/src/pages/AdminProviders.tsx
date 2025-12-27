@@ -15,8 +15,17 @@ interface Provider {
   disputed_at: string | null;
 }
 
-const API_BASE = 'http://localhost:3000';
+const API_BASE = `${window.location.protocol}//${window.location.hostname}:3000`;
 const ADMIN_KEY = 'admin-secret'; // In real app, from env
+
+const getIslandDisplayName = (islandCode: string) => {
+  switch (islandCode) {
+    case 'STT': return 'St. Thomas';
+    case 'STJ': return 'St. John';
+    case 'STX': return 'St. Croix';
+    default: return islandCode;
+  }
+};
 
 export const AdminProviders: React.FC = () => {
   const navigate = useNavigate();
@@ -109,7 +118,15 @@ export const AdminProviders: React.FC = () => {
 
   return (
     <div className="container mx-auto px-4 py-8">
-      <h1 className="text-3xl font-bold mb-8">Admin - Providers</h1>
+      <h1 className="text-3xl font-bold mb-4">Admin - Providers</h1>
+      
+      <div className="mb-8">
+        <nav className="flex space-x-4">
+          <a href="/admin/providers" className="text-blue-600 hover:underline">Providers</a>
+          <a href="/admin/reports" className="text-blue-600 hover:underline">Reports</a>
+          <a href="/admin/settings" className="text-blue-600 hover:underline">Settings</a>
+        </nav>
+      </div>
 
       <div className="mb-8 grid grid-cols-1 md:grid-cols-3 gap-4">
         <select
@@ -166,7 +183,7 @@ export const AdminProviders: React.FC = () => {
               <tr key={provider.id}>
                 <td className="px-4 py-2 border">{provider.name}</td>
                 <td className="px-4 py-2 border">{provider.phone}</td>
-                <td className="px-4 py-2 border">{provider.island}</td>
+                <td className="px-4 py-2 border">{getIslandDisplayName(provider.island)}</td>
                 <td className="px-4 py-2 border">
                   <Badge label={provider.status} variant="info" />
                 </td>

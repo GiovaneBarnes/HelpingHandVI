@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { Card } from '../components/Card';
 import { Button } from '../components/Button';
 
-const API_BASE = 'http://localhost:3000';
+const ADMIN_PASSWORD = 'admin123'; // In real app, from env
 
 export const AdminLogin: React.FC = () => {
   const navigate = useNavigate();
@@ -12,20 +12,11 @@ export const AdminLogin: React.FC = () => {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    try {
-      const response = await fetch(`${API_BASE}/admin/login`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ password }),
-      });
-      if (response.ok) {
-        localStorage.setItem('admin_logged_in', 'true');
-        navigate('/admin/providers');
-      } else {
-        setError('Invalid password');
-      }
-    } catch (err) {
-      setError('Login failed');
+    if (password === ADMIN_PASSWORD) {
+      localStorage.setItem('admin_logged_in', 'true');
+      navigate('/admin/providers');
+    } else {
+      setError('Invalid password');
     }
   };
 
@@ -35,8 +26,9 @@ export const AdminLogin: React.FC = () => {
         <h1 className="text-2xl font-bold mb-4">Admin Login</h1>
         <form onSubmit={handleSubmit}>
           <div className="mb-4">
-            <label className="block text-sm font-medium mb-1">Password</label>
+            <label htmlFor="password" className="block text-sm font-medium mb-1">Password</label>
             <input
+              id="password"
               type="password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}

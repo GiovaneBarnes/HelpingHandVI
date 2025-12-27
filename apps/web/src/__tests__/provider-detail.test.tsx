@@ -114,7 +114,7 @@ describe('ProviderDetail', () => {
     });
 
     expect(screen.getByText('Test Provider')).toBeInTheDocument();
-    expect(screen.getByText('STT')).toBeInTheDocument();
+    expect(screen.getByText('St. Thomas')).toBeInTheDocument();
     expect(screen.getByText('TODAY')).toBeInTheDocument();
     expect(screen.getByText('Preferred contact: CALL')).toBeInTheDocument();
   });

@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Button } from '../components/Button';
 
-const API_BASE = 'http://localhost:3000';
+const API_BASE = `${window.location.protocol}//${window.location.hostname}:3000`;
 const ADMIN_KEY = 'admin-secret'; // In real app, from env
 
 export const AdminSettings: React.FC = () => {
@@ -21,9 +21,11 @@ export const AdminSettings: React.FC = () => {
       const response = await fetch(`${API_BASE}/settings/emergency-mode`);
       if (!response.ok) throw new Error('Failed to fetch');
       const data = await response.json();
-      setEmergencyMode(data);
+      setEmergencyMode(data.data || { enabled: false });
     } catch (err) {
+      console.error('Error fetching emergency mode status');
       alert('Error fetching emergency mode status');
+      setEmergencyMode({ enabled: false });
     } finally {
       setLoading(false);
     }
@@ -33,12 +35,14 @@ export const AdminSettings: React.FC = () => {
     const notes = prompt('Notes for this change:');
     if (notes !== null) {
       try {
-        await fetch(`${API_BASE}/admin/settings/emergency-mode`, {
+        const response = await fetch(`${API_BASE}/admin/settings/emergency-mode`, {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json', 'X-ADMIN-KEY': ADMIN_KEY },
           body: JSON.stringify({ enabled: !emergencyMode.enabled, notes }),
         });
-        setEmergencyMode(prev => ({ enabled: !prev.enabled }));
+        if (!response.ok) throw new Error('Failed to update');
+        const data = await response.json();
+        setEmergencyMode(data.data || { enabled: !emergencyMode.enabled });
       } catch (err) {
         alert('Error updating emergency mode');
       }
@@ -49,7 +53,15 @@ export const AdminSettings: React.FC = () => {
 
   return (
     <div className="container mx-auto px-4 py-8">
-      <h1 className="text-3xl font-bold mb-8">Admin - Settings</h1>
+      <h1 className="text-3xl font-bold mb-4">Admin - Settings</h1>
+      
+      <div className="mb-8">
+        <nav className="flex space-x-4">
+          <a href="/admin/providers" className="text-blue-600 hover:underline">Providers</a>
+          <a href="/admin/reports" className="text-blue-600 hover:underline">Reports</a>
+          <a href="/admin/settings" className="text-blue-600 hover:underline">Settings</a>
+        </nav>
+      </div>
 
       <div className="bg-white p-6 rounded-lg shadow-md">
         <h2 className="text-xl font-semibold mb-4">Emergency Mode</h2>

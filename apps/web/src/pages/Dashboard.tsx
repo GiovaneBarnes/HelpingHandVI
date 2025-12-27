@@ -11,8 +11,12 @@ interface Provider {
   whatsapp?: string;
   island: string;
   status: string;
-  is_premium: boolean;
+  plan: string;
+  plan_source: string;
+  trial_end_at?: string;
+  is_premium_active: boolean;
   trial_days_left: number;
+  is_trial: boolean;
   categories: string[];
   areas: Array<{ id: number; name: string; island: string }>;
   contact_call_enabled: boolean;
@@ -23,7 +27,7 @@ interface Provider {
   emergency_calls_accepted: boolean;
 }
 
-const API_BASE = 'http://localhost:3000';
+const API_BASE = `${window.location.protocol}//${window.location.hostname}:3000`;
 
 const getAvailabilityColor = (status: string) => {
   switch (status) {
@@ -147,12 +151,27 @@ export const Dashboard: React.FC = () => {
         <h1 className="text-3xl font-bold mb-4">Dashboard</h1>
         <p>Token: {token}</p>
 
+        {/* Trial/Premium Status Card */}
+        <div className="mb-6 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+          <h3 className="font-semibold text-blue-900 mb-2">
+            {provider.is_trial && provider.trial_days_left > 0
+              ? `Premium Trial: ${provider.trial_days_left} days left`
+              : provider.is_premium_active
+                ? 'Premium Plan'
+                : 'Free Plan'
+            }
+          </h3>
+          <p className="text-sm text-blue-700">
+            No card required. Your listing stays active either way.
+          </p>
+        </div>
+
         <div className="mb-4">
-          {provider.is_premium && provider.trial_days_left > 0 && (
-            <Badge label={`Founding trial: ${provider.trial_days_left} days left`} variant="warning" className="ml-2" />
-          )}
           <h2 className="text-xl font-semibold mb-2">Current Status</h2>
           <Badge label={provider.status} variant={getAvailabilityColor(provider.status)} />
+          {provider.is_premium_active && (
+            <Badge label={provider.is_trial ? "Trial" : "Premium"} variant="success" className="ml-2" />
+          )}
         </div>
 
         <div className="mb-4">

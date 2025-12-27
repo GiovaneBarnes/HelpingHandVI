@@ -53,6 +53,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Improved user experience for location-based searches
   - Frontend state management for dynamic filtering
 
+- **Network Access for Mobile Development**: Enable cross-device testing and development
+  - CORS configuration updated to allow network IP addresses (e.g., `http://192.168.1.245:5173`)
+  - API server configured to bind to `0.0.0.0` for network interface access
+  - Dynamic API_BASE URLs that automatically adapt to current hostname (localhost or network IP)
+  - Consistent island name display across all components using `getIslandDisplayName()` function
+  - Mobile-friendly development workflow with automatic hostname resolution
+  - All API calls work seamlessly whether accessed via localhost or network IP
+
 - **Trust System**: Complete behavior-based provider lifecycle management
   - Activity tracking and logging for all provider interactions
   - Automated trust scoring algorithm with badge-based ranking
