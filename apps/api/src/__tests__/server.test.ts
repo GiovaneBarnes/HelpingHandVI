@@ -54,6 +54,9 @@ describe('GET /providers', () => {
   });
 
   it('should return 400 for invalid limit', async () => {
+    // Mock the emergency mode query
+    (mockPool.query as jest.Mock).mockResolvedValueOnce({ rows: [] });
+
     const response = await request(app).get('/providers?limit=0');
 
     expect(response.status).toBe(400);
@@ -169,6 +172,102 @@ describe('GET /providers', () => {
 
     expect(response.status).toBe(400);
     expect(response.body.error.code).toBe('INVALID_ISLAND');
+  });
+
+  it('should filter by status', async () => {
+    const mockEmergencyMode = { rows: [{ value: { enabled: false } }] };
+    const mockProviders = [{ id: 1, name: 'Available Provider', status: 'TODAY' }];
+    (mockPool.query as jest.Mock)
+      .mockResolvedValueOnce(mockEmergencyMode)
+      .mockResolvedValueOnce({ rows: mockProviders });
+
+    const response = await request(app).get('/providers?status=TODAY');
+
+    expect(response.status).toBe(200);
+    expect(mockPool.query).toHaveBeenNthCalledWith(2,
+      expect.stringContaining('p.status = $'),
+      expect.arrayContaining(['TODAY'])
+    );
+  });
+
+  it('should filter by category ID', async () => {
+    const mockEmergencyMode = { rows: [{ value: { enabled: false } }] };
+    const mockProviders = [{ id: 1, name: 'Electrician', categoryId: '1' }];
+    (mockPool.query as jest.Mock)
+      .mockResolvedValueOnce(mockEmergencyMode)
+      .mockResolvedValueOnce({ rows: mockProviders });
+
+    const response = await request(app).get('/providers?categoryId=1');
+
+    expect(response.status).toBe(200);
+    expect(mockPool.query).toHaveBeenNthCalledWith(2,
+      expect.stringContaining('EXISTS (SELECT 1 FROM provider_categories pc WHERE pc.provider_id = p.id AND pc.category_id = $'),
+      expect.arrayContaining(['1'])
+    );
+  });
+
+  it('should filter by area ID', async () => {
+    const mockEmergencyMode = { rows: [{ value: { enabled: false } }] };
+    const mockProviders = [{ id: 1, name: 'Provider in Area', areaId: '1' }];
+    (mockPool.query as jest.Mock)
+      .mockResolvedValueOnce(mockEmergencyMode)
+      .mockResolvedValueOnce({ rows: mockProviders });
+
+    const response = await request(app).get('/providers?areaId=1');
+
+    expect(response.status).toBe(200);
+    expect(mockPool.query).toHaveBeenNthCalledWith(2,
+      expect.stringContaining('EXISTS (SELECT 1 FROM provider_areas pa WHERE pa.provider_id = p.id AND pa.area_id = $'),
+      expect.arrayContaining(['1'])
+    );
+  });
+
+  it('should apply multiple filters simultaneously (island + status)', async () => {
+    const mockEmergencyMode = { rows: [{ value: { enabled: false } }] };
+    const mockProviders = [{ id: 1, name: 'Filtered Provider' }];
+    (mockPool.query as jest.Mock)
+      .mockResolvedValueOnce(mockEmergencyMode)
+      .mockResolvedValueOnce({ rows: mockProviders });
+
+    const response = await request(app).get('/providers?island=STT&status=TODAY');
+
+    expect(response.status).toBe(200);
+    const queryCall = (mockPool.query as jest.Mock).mock.calls[1][0];
+    expect(queryCall).toContain('p.island = $');
+    expect(queryCall).toContain('p.status = $');
+    expect((mockPool.query as jest.Mock).mock.calls[1][1]).toEqual(expect.arrayContaining(['STT', 'TODAY']));
+  });
+
+  it('should apply all filters simultaneously (island + area + category + status)', async () => {
+    const mockEmergencyMode = { rows: [{ value: { enabled: false } }] };
+    const mockProviders = [{ id: 1, name: 'Fully Filtered Provider' }];
+    (mockPool.query as jest.Mock)
+      .mockResolvedValueOnce(mockEmergencyMode)
+      .mockResolvedValueOnce({ rows: mockProviders });
+
+    const response = await request(app).get('/providers?island=STT&areaId=1&categoryId=2&status=TODAY');
+
+    expect(response.status).toBe(200);
+    const queryCall = (mockPool.query as jest.Mock).mock.calls[1][0];
+    expect(queryCall).toContain('p.island = $');
+    expect(queryCall).toContain('p.status = $');
+    expect(queryCall).toContain('EXISTS (SELECT 1 FROM provider_categories pc WHERE pc.provider_id = p.id AND pc.category_id = $');
+    expect(queryCall).toContain('EXISTS (SELECT 1 FROM provider_areas pa WHERE pa.provider_id = p.id AND pa.area_id = $');
+    expect((mockPool.query as jest.Mock).mock.calls[1][1]).toEqual(expect.arrayContaining(['STT', 'TODAY', '2', '1']));
+  });
+
+  it('should return all providers when no filters applied', async () => {
+    const mockProviders = [
+      { id: 1, name: 'Provider 1' },
+      { id: 2, name: 'Provider 2' },
+      { id: 3, name: 'Provider 3' }
+    ];
+    (mockPool.query as jest.Mock).mockResolvedValue({ rows: mockProviders });
+
+    const response = await request(app).get('/providers');
+
+    expect(response.status).toBe(200);
+    expect(response.body.data.providers).toHaveLength(3);
   });
 });
 
@@ -538,17 +637,20 @@ describe('GET /providers with area filter', () => {
   });
 
   it('should filter providers by areaId', async () => {
+    const mockEmergencyMode = { rows: [{ value: { enabled: false } }] };
     const mockProviders = [
       { id: 1, name: 'Provider 1', trust_score: 100, last_active_at: null, status_last_updated_at: '2023-01-01T00:00:00Z' },
     ];
-    (mockPool.query as jest.Mock).mockResolvedValue({ rows: mockProviders });
+    (mockPool.query as jest.Mock)
+      .mockResolvedValueOnce(mockEmergencyMode)
+      .mockResolvedValueOnce({ rows: mockProviders });
 
-    const response = await request(app).get('/providers?status=AVAILABLE&areaId=1');
+    const response = await request(app).get('/providers?status=TODAY&areaId=1');
 
     expect(response.status).toBe(200);
-    expect(mockPool.query).toHaveBeenCalledWith(
+    expect(mockPool.query).toHaveBeenNthCalledWith(2,
       expect.stringContaining('EXISTS (SELECT 1 FROM provider_areas pa WHERE pa.provider_id = p.id AND pa.area_id = $2)'),
-      expect.arrayContaining(['AVAILABLE', '1'])
+      expect.arrayContaining(['TODAY', '1'])
     );
   });
 });

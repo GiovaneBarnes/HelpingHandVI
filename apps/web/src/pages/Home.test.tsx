@@ -92,7 +92,31 @@ describe('Home', () => {
   });
 
   it('displays error message when API fails', async () => {
-    fetchMock.mockImplementationOnce(() => Promise.reject(new Error('Network error')));
+    fetchMock.mockImplementation((url: string) => {
+      if (url.includes('/providers')) {
+        return Promise.reject(new Error('Network error'));
+      }
+      if (url.includes('/settings/emergency-mode')) {
+        return Promise.resolve({
+          ok: true,
+          json: () => Promise.resolve({ enabled: false })
+        });
+      } else if (url.includes('/categories')) {
+        return Promise.resolve({
+          ok: true,
+          json: () => Promise.resolve([])
+        });
+      } else if (url.includes('/areas')) {
+        return Promise.resolve({
+          ok: true,
+          json: () => Promise.resolve([])
+        });
+      }
+      return Promise.resolve({
+        ok: true,
+        json: () => Promise.resolve({})
+      });
+    });
 
     renderHome();
 

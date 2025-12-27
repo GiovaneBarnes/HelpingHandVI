@@ -58,12 +58,18 @@ export const Home: React.FC = () => {
   const [suggestions, setSuggestions] = useState<any[]>([]);
   const [filters, setFilters] = useState({
     island: '',
-    category: '',
-    availability: '',
+    categoryId: '',
+    status: '',
     areaId: '',
   });
   const [availableAreas, setAvailableAreas] = useState<Array<{ id: number; name: string }>>([]);
+  const [availableCategories, setAvailableCategories] = useState<Array<{ id: number; name: string }>>([]);
   const [emergencyMode, setEmergencyMode] = useState({ enabled: false });
+
+  useEffect(() => {
+    fetchCategories();
+    fetchEmergencyMode();
+  }, []);
 
   useEffect(() => {
     console.log('[DEBUG] Filters changed, fetching providers:', filters);
@@ -118,6 +124,20 @@ export const Home: React.FC = () => {
     }
   };
 
+  const fetchCategories = async () => {
+    try {
+      const response = await fetch(`${API_BASE}/categories`);
+      if (response.ok) {
+        const categories = await response.json();
+        setAvailableCategories(categories);
+      } else {
+        console.error('Failed to fetch categories');
+      }
+    } catch (err) {
+      console.error('Error fetching categories:', err);
+    }
+  };
+
   const fetchProviders = async (reset = false) => {
     console.log(`[DEBUG] fetchProviders called with reset=${reset}, current filters:`, filters);
     if (reset) {
@@ -132,8 +152,8 @@ export const Home: React.FC = () => {
     try {
       const params = new URLSearchParams();
       if (filters.island) params.append('island', filters.island);
-      if (filters.category) params.append('category', filters.category);
-      if (filters.availability) params.append('status', filters.availability);
+      if (filters.categoryId) params.append('categoryId', filters.categoryId);
+      if (filters.status) params.append('status', filters.status);
       if (filters.areaId) params.append('areaId', filters.areaId);
       if (!reset && cursor) params.append('cursor', cursor);
 
@@ -245,19 +265,19 @@ export const Home: React.FC = () => {
         </select>
 
         <select
-          value={filters.category}
-          onChange={(e) => handleFilterChange('category', e.target.value)}
+          value={filters.categoryId}
+          onChange={(e) => handleFilterChange('categoryId', e.target.value)}
           className="border rounded px-3 py-2"
         >
           <option value="">All Categories</option>
-          <option value="Electrician">Electrician</option>
-          <option value="Plumber">Plumber</option>
-          {/* Add more */}
+          {availableCategories.map(category => (
+            <option key={category.id} value={category.id}>{category.name}</option>
+          ))}
         </select>
 
         <select
-          value={filters.availability}
-          onChange={(e) => handleFilterChange('availability', e.target.value)}
+          value={filters.status}
+          onChange={(e) => handleFilterChange('status', e.target.value)}
           className="border rounded px-3 py-2"
         >
           <option value="">All Availability</option>
@@ -287,6 +307,12 @@ export const Home: React.FC = () => {
       )}
 
       <DisclaimerNotice variant="compact" className="mb-6" />
+
+      {error && (
+        <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded">
+          <p className="text-red-800">Error: {error}</p>
+        </div>
+      )}
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         {providers.map(provider => (
