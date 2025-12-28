@@ -17,16 +17,15 @@ interface Provider {
   lifecycle_status: string;
   is_premium_active: boolean;
   is_trial: boolean;
+  categories: string[];
 }
 
 const API_BASE = `${window.location.protocol}//${window.location.hostname}:3000`;
 
 const getAvailabilityColor = (status: string) => {
   switch (status) {
-    case 'TODAY': return 'success';
-    case 'NEXT_3_DAYS': return 'warning';
-    case 'THIS_WEEK': return 'info';
-    case 'NEXT_WEEK': return 'secondary';
+    case 'OPEN_NOW': return 'success';
+    case 'BUSY_LIMITED': return 'warning';
     default: return 'error';
   }
 };
@@ -44,8 +43,28 @@ const getHoursAgo = (lastActiveAt: string) => {
   const now = new Date();
   const lastActive = new Date(lastActiveAt);
   const diffMs = now.getTime() - lastActive.getTime();
-  const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
-  return diffHours;
+  const diffMinutes = Math.floor(diffMs / (1000 * 60));
+  const diffHours = Math.floor(diffMinutes / 60);
+  const diffDays = Math.floor(diffHours / 24);
+  const diffWeeks = Math.floor(diffDays / 7);
+  const diffMonths = Math.floor(diffDays / 30);
+  const diffYears = Math.floor(diffDays / 365);
+
+  if (diffMinutes < 1) {
+    return 'just now';
+  } else if (diffMinutes < 60) {
+    return `${diffMinutes} minute${diffMinutes !== 1 ? 's' : ''} ago`;
+  } else if (diffHours < 24) {
+    return `${diffHours} hour${diffHours !== 1 ? 's' : ''} ago`;
+  } else if (diffDays < 7) {
+    return `${diffDays} day${diffDays !== 1 ? 's' : ''} ago`;
+  } else if (diffWeeks < 4) {
+    return `${diffWeeks} week${diffWeeks !== 1 ? 's' : ''} ago`;
+  } else if (diffMonths < 12) {
+    return `${diffMonths} month${diffMonths !== 1 ? 's' : ''} ago`;
+  } else {
+    return `${diffYears} year${diffYears !== 1 ? 's' : ''} ago`;
+  }
 };
 
 export const Home: React.FC = () => {
@@ -60,9 +79,7 @@ export const Home: React.FC = () => {
     island: '',
     categoryId: '',
     status: '',
-    areaId: '',
   });
-  const [availableAreas, setAvailableAreas] = useState<Array<{ id: number; name: string }>>([]);
   const [availableCategories, setAvailableCategories] = useState<Array<{ id: number; name: string }>>([]);
   const [emergencyMode, setEmergencyMode] = useState({ enabled: false });
 
@@ -76,38 +93,6 @@ export const Home: React.FC = () => {
     fetchProviders(true);
     fetchEmergencyMode();
   }, [filters]);
-
-  useEffect(() => {
-    if (filters.island) {
-      console.log('[DEBUG] Island selected, fetching areas for:', filters.island);
-      fetchAreas();
-    } else {
-      console.log('[DEBUG] No island selected, clearing areas');
-      setAvailableAreas([]);
-      setFilters(prev => ({ ...prev, areaId: '' }));
-    }
-  }, [filters.island]);
-
-  const fetchAreas = async () => {
-    console.log('[DEBUG] fetchAreas called for island:', filters.island);
-    try {
-      const url = `${API_BASE}/areas?island=${filters.island}`;
-      console.log('[DEBUG] Fetching areas from URL:', url);
-      
-      const response = await fetch(url);
-      console.log('[DEBUG] Areas response status:', response.status);
-      
-      if (response.ok) {
-        const areas = await response.json();
-        console.log('[DEBUG] Areas received:', areas);
-        setAvailableAreas(areas);
-      } else {
-        console.error('[DEBUG] Failed to fetch areas, status:', response.status);
-      }
-    } catch (err) {
-      console.error('[DEBUG] Error fetching areas:', err);
-    }
-  };
 
   const fetchEmergencyMode = async () => {
     try {
@@ -154,7 +139,6 @@ export const Home: React.FC = () => {
       if (filters.island) params.append('island', filters.island);
       if (filters.categoryId) params.append('categoryId', filters.categoryId);
       if (filters.status) params.append('status', filters.status);
-      if (filters.areaId) params.append('areaId', filters.areaId);
       if (!reset && cursor) params.append('cursor', cursor);
 
       const url = `${API_BASE}/providers?${params}`;
@@ -219,7 +203,29 @@ export const Home: React.FC = () => {
   if (error) return <div className="text-center py-8 text-red-600">Error: {error}</div>;
 
   return (
-    <div className="container mx-auto px-4 py-8">
+    <div className="min-h-screen bg-gray-50">
+      {/* Header Navigation */}
+      <header className="bg-indigo-600 shadow-lg">
+        <div className="container mx-auto px-4">
+          <div className="flex justify-between items-center py-4">
+            <div className="flex items-center">
+              <Link to="/" className="text-white text-xl font-bold hover:text-indigo-100">
+                HelpingHandVI
+              </Link>
+            </div>
+            <div className="flex items-center space-x-4">
+              <Link
+                to="/provider/login"
+                className="bg-indigo-700 hover:bg-indigo-800 text-white px-4 py-2 rounded-md font-medium transition-colors"
+              >
+                Provider Portal
+              </Link>
+            </div>
+          </div>
+        </div>
+      </header>
+
+      <div className="container mx-auto px-4 py-8">
       <h1 className="text-3xl font-bold mb-2">Find Providers</h1>
       <p className="text-gray-600 mb-8">Your backup plan when your usual guy doesn't answer.</p>
 
@@ -253,18 +259,6 @@ export const Home: React.FC = () => {
         </select>
 
         <select
-          value={filters.areaId}
-          onChange={(e) => handleFilterChange('areaId', e.target.value)}
-          className="border rounded px-3 py-2"
-          disabled={!filters.island}
-        >
-          <option value="">All Areas</option>
-          {availableAreas.map(area => (
-            <option key={area.id} value={area.id}>{area.name}</option>
-          ))}
-        </select>
-
-        <select
           value={filters.categoryId}
           onChange={(e) => handleFilterChange('categoryId', e.target.value)}
           className="border rounded px-3 py-2"
@@ -281,10 +275,9 @@ export const Home: React.FC = () => {
           className="border rounded px-3 py-2"
         >
           <option value="">All Availability</option>
-          <option value="TODAY">Today</option>
-          <option value="NEXT_3_DAYS">Next 3 Days</option>
-          <option value="THIS_WEEK">This Week</option>
-          <option value="NEXT_WEEK">Next Week</option>
+          <option value="OPEN_NOW">Open Now</option>
+          <option value="BUSY_LIMITED">Busy / Limited</option>
+          <option value="NOT_TAKING_WORK">Not Taking Work</option>
         </select>
       </div>
 
@@ -324,12 +317,22 @@ export const Home: React.FC = () => {
               )}
             </div>
             <p className="text-gray-600 mb-2">{getIslandDisplayName(provider.island)}</p>
+            {provider.categories && provider.categories.length > 0 && (
+              <p className="text-sm text-gray-500 mb-2">{provider.categories.join(', ')}</p>
+            )}
+            {provider.profile?.description && (
+              <p className="text-sm text-gray-700 mb-2 line-clamp-2">
+                {provider.profile.description.length > 100
+                  ? `${provider.profile.description.substring(0, 100)}...`
+                  : provider.profile.description}
+              </p>
+            )}
             <Badge label={provider.status} variant={getAvailabilityColor(provider.status)} className="mb-2" />
             {provider.is_premium_active && (
               <Badge label={provider.is_trial ? "Trial" : "Premium"} variant="success" className="mb-2 ml-2" />
             )}
             <p className="text-sm text-gray-500 mb-4">
-              Activity: {provider.last_active_at ? `${getHoursAgo(provider.last_active_at)} hours ago` : 'Never'}
+              Activity: {provider.last_active_at ? getHoursAgo(provider.last_active_at) : 'Never'}
             </p>
             <div className="flex space-x-2">
               <Button href={`tel:${provider.phone}`}>Call</Button>
@@ -340,9 +343,6 @@ export const Home: React.FC = () => {
                 {provider.whatsapp ? 'WhatsApp' : 'SMS'}
               </Button>
             </div>
-            <Link to={`/provider/${provider.id}`} className="text-blue-600 hover:underline mt-2 block">
-              View Details
-            </Link>
           </Card>
         ))}
       </div>
@@ -354,6 +354,7 @@ export const Home: React.FC = () => {
           </Button>
         </div>
       )}
+      </div>
     </div>
   );
 };

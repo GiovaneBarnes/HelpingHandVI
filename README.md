@@ -34,6 +34,7 @@ A comprehensive provider directory application for the Virgin Islands, built as 
 - **Smart Ranking**: Providers are ranked based on verification badges, activity, premium status, and trial eligibility
 - **Trust System**: Behavior-based provider lifecycle management with activity tracking and automated status updates (fully tested ✅)
 - **Governance System**: Complete admin governance with audit trails, dispute management, and emergency mode (fully tested ✅)
+- **Authentication**: Secure email/password authentication with Firebase Auth integration (optional)
 - **Responsive Design**: Mobile-friendly interface built with Tailwind CSS
 - **Type Safety**: Full TypeScript implementation for reliability
 - **Database Migrations**: Structured schema evolution with SQL migrations and seeds
@@ -99,6 +100,7 @@ helpinghand/
 - **pnpm** (v8 or higher)
 - **Docker** and Docker Compose
 - **Git**
+- **Firebase Account** (optional, for professional authentication)
 
 ## Installation
 
@@ -121,6 +123,41 @@ helpinghand/
    ADMIN_KEY=admin-secret
    PORT=3000
    ```
+
+4. **Set up Firebase Authentication (Optional):**
+   For professional authentication with email/password and automatic email handling:
+   
+   a. **Create Firebase Project:**
+      - Go to [Firebase Console](https://console.firebase.google.com/)
+      - Create a new project called "HelpingHandVI"
+      - Enable Authentication service and Email/Password sign-in method
+   
+   b. **Install Firebase SDK:**
+      ```bash
+      cd apps/web
+      npm install firebase
+      ```
+   
+   c. **Configure Firebase:**
+      - In Firebase Console, go to Project Settings > General
+      - Scroll to "Your apps" and click "Add app" > Web app
+      - Copy the Firebase config object
+      - Update `.env` in the root directory with real values:
+      ```env
+      VITE_USE_FIREBASE_AUTH=true
+      VITE_FIREBASE_API_KEY=your-api-key
+      VITE_FIREBASE_AUTH_DOMAIN=helpinghandvi.firebaseapp.com
+      VITE_FIREBASE_PROJECT_ID=helpinghandvi
+      VITE_FIREBASE_STORAGE_BUCKET=helpinghandvi.appspot.com
+      VITE_FIREBASE_MESSAGING_SENDER_ID=your-sender-id
+      VITE_FIREBASE_APP_ID=your-app-id
+      ```
+   
+   d. **Email Service Setup (Optional):**
+      For production email delivery, configure one of:
+      - **SendGrid**: Set `EMAIL_PROVIDER=sendgrid` and `SENDGRID_API_KEY=your-key`
+      - **AWS SES**: Set `EMAIL_PROVIDER=aws-ses` and AWS credentials
+      - **Console**: Default for development (logs to console)
 
 ## Database Setup
 

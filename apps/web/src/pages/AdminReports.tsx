@@ -97,6 +97,7 @@ export const AdminReports: React.FC = () => {
       <div className="mb-8">
         <nav className="flex space-x-4">
           <a href="/admin/providers" className="text-blue-600 hover:underline">Providers</a>
+          <a href="/admin/requests" className="text-blue-600 hover:underline">Requests</a>
           <a href="/admin/reports" className="text-blue-600 hover:underline">Reports</a>
           <a href="/admin/settings" className="text-blue-600 hover:underline">Settings</a>
         </nav>

@@ -2,6 +2,8 @@ import express, { Request, Response, NextFunction } from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
 import pg from 'pg';
+import crypto from 'crypto';
+import { emailService } from './services/emailService';
 
 dotenv.config();
 
@@ -20,12 +22,45 @@ declare global {
 const app = express();
 
 export { app };
-const port = process.env.PORT || 3000;
+const port = parseInt(process.env.PORT || '3000', 10);
 
 const { Pool } = pg;
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL || 'postgresql://localhost:5432/virgin_islands_providers'
 });
+
+// Run migration on startup
+(async () => {
+  try {
+    console.log('Running island migration...');
+
+    // Update providers table
+    await pool.query(`
+      UPDATE providers
+      SET island = CASE
+        WHEN island = 'St. Thomas' THEN 'STT'
+        WHEN island = 'St. Croix' THEN 'STX'
+        WHEN island = 'St. John' THEN 'STJ'
+        ELSE island
+      END
+    `);
+
+    // Update areas table
+    await pool.query(`
+      UPDATE areas
+      SET island = CASE
+        WHEN island = 'St. Thomas' THEN 'STT'
+        WHEN island = 'St. Croix' THEN 'STX'
+        WHEN island = 'St. John' THEN 'STJ'
+        ELSE island
+      END
+    `);
+
+    console.log('Island migration completed successfully');
+  } catch (error) {
+    console.error('Migration failed:', error);
+  }
+})();
 
 // Activity Service helper
 class ActivityService {
@@ -43,6 +78,115 @@ class ActivityService {
 }
 
 export { ActivityService };
+
+// Behavior-based verification service
+class VerificationService {
+  static async checkVerificationCriteria(providerId: number): Promise<boolean> {
+    try {
+      // Get provider data
+      const providerResult = await pool.query(`
+        SELECT 
+          p.created_at,
+          p.phone,
+          p.profile->>'description' as description,
+          (SELECT COUNT(*) FROM provider_categories WHERE provider_id = p.id) as category_count,
+          (SELECT COUNT(*) FROM provider_areas WHERE provider_id = p.id) as area_count,
+          (SELECT COUNT(DISTINCT DATE(created_at)) FROM activity_events WHERE provider_id = p.id AND type IN ('PROFILE_VIEW', 'STATUS_UPDATE', 'LOGIN')) as active_days,
+          (SELECT COUNT(*) FROM activity_events WHERE provider_id = p.id AND type IN ('CUSTOMER_CALL', 'CUSTOMER_SMS', 'CUSTOMER_WHATSAPP')) as customer_interactions,
+          (SELECT COUNT(*) FROM activity_events WHERE provider_id = p.id AND type = 'STATUS_OPEN_FOR_WORK') as open_for_work_count
+        FROM providers p 
+        WHERE p.id = $1
+      `, [providerId]);
+
+      if (providerResult.rows.length === 0) return false;
+
+      const data = providerResult.rows[0];
+
+      // Rule 1: Account Age ≥ 14 days
+      const accountAge = (Date.now() - new Date(data.created_at).getTime()) / (1000 * 60 * 60 * 24);
+      if (accountAge < 14) return false;
+
+      // Rule 2: Active on ≥ 5 different days
+      if (parseInt(data.active_days) < 5) return false;
+
+      // Rule 3: At least 1 customer interaction OR status set to "Open for Work"
+      const hasCustomerInteraction = parseInt(data.customer_interactions) > 0;
+      const hasOpenForWork = parseInt(data.open_for_work_count) > 0;
+      if (!hasCustomerInteraction && !hasOpenForWork) return false;
+
+      // Rule 4: Profile completeness
+      if (!data.phone || !data.phone.trim()) return false;
+      if (parseInt(data.category_count) < 1) return false;
+      if (parseInt(data.area_count) < 1) return false;
+      if (!data.description || !data.description.trim()) return false;
+
+      return true;
+    } catch (error) {
+      console.error('Error checking verification criteria:', error);
+      return false;
+    }
+  }
+
+  static async updateVerificationStatus(providerId: number): Promise<void> {
+    try {
+      const isVerified = await this.checkVerificationCriteria(providerId);
+
+      if (isVerified) {
+        // Add VERIFIED badge if not already present
+        await pool.query(`
+          INSERT INTO provider_badges (provider_id, badge)
+          SELECT $1, 'VERIFIED'
+          WHERE NOT EXISTS (
+            SELECT 1 FROM provider_badges 
+            WHERE provider_id = $1 AND badge = 'VERIFIED'
+          )
+        `, [providerId]);
+      } else {
+        // Remove VERIFIED badge if present
+        await pool.query(`
+          DELETE FROM provider_badges
+          WHERE provider_id = $1 AND badge = 'VERIFIED'
+        `, [providerId]);
+      }
+    } catch (error) {
+      console.error('Error updating verification status:', error);
+    }
+  }
+
+  static async checkAndUpdateAllProviders(): Promise<void> {
+    try {
+      // Get all active providers
+      const providers = await pool.query(`
+        SELECT id FROM providers 
+        WHERE lifecycle_status = 'ACTIVE'
+      `);
+
+      // Check verification for each provider
+      for (const provider of providers.rows) {
+        await this.updateVerificationStatus(provider.id);
+      }
+
+      // Apply decay rule: Remove VERIFIED badge if inactive for 30+ days
+      await pool.query(`
+        DELETE FROM provider_badges 
+        WHERE badge = 'VERIFIED' 
+        AND provider_id IN (
+          SELECT p.id FROM providers p 
+          WHERE p.lifecycle_status = 'ACTIVE'
+          AND NOT EXISTS (
+            SELECT 1 FROM activity_events ae 
+            WHERE ae.provider_id = p.id 
+            AND ae.created_at > NOW() - INTERVAL '30 days'
+          )
+        )
+      `);
+    } catch (error) {
+      console.error('Error checking all providers:', error);
+    }
+  }
+}
+
+export { VerificationService };
 
 // Premium/Trial helper functions
 export const isPremium = (provider: any): boolean => {
@@ -137,9 +281,19 @@ app.get('/areas', async (req: Request, res: Response) => {
   }
 });
 
+app.get('/categories', async (req: Request, res: Response) => {
+  try {
+    const result = await pool.query('SELECT id, name FROM categories ORDER BY name');
+    res.json(result.rows);
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 app.get('/providers', async (req: Request, res: Response) => {
   try {
-    const { status, island, category, areaId, limit: limitParam, cursor: cursorParam } = req.query;
+    const { status, island, categoryId, areaId, limit: limitParam, cursor: cursorParam } = req.query;
 
     // Check emergency mode
     const emergencyResult = await pool.query('SELECT value FROM app_settings WHERE key = $1', ['emergency_mode']);
@@ -161,6 +315,22 @@ app.get('/providers', async (req: Request, res: Response) => {
       return res.status(400).json({ error: { code: 'INVALID_ISLAND', message: 'Island must be one of: STT, STX, STJ', fieldErrors: { island: 'Must be STT, STX, or STJ' } } });
     }
 
+    // Validate status parameter
+    const validStatuses = ['OPEN_NOW', 'BUSY_LIMITED', 'NOT_TAKING_WORK'];
+    if (status && typeof status === 'string' && !validStatuses.includes(status)) {
+      return res.status(400).json({ error: { code: 'INVALID_STATUS', message: 'Status must be one of: OPEN_NOW, BUSY_LIMITED, NOT_TAKING_WORK', fieldErrors: { status: 'Invalid status value' } } });
+    }
+
+    // Validate categoryId parameter
+    if (categoryId && (typeof categoryId !== 'string' || isNaN(parseInt(categoryId, 10)))) {
+      return res.status(400).json({ error: { code: 'INVALID_CATEGORY_ID', message: 'Category ID must be a valid number', fieldErrors: { categoryId: 'Must be a valid number' } } });
+    }
+
+    // Validate areaId parameter
+    if (areaId && (typeof areaId !== 'string' || isNaN(parseInt(areaId, 10)))) {
+      return res.status(400).json({ error: { code: 'INVALID_AREA_ID', message: 'Area ID must be a valid number', fieldErrors: { areaId: 'Must be a valid number' } } });
+    }
+
     let cursor: { trust_tier: number; is_premium_active: boolean; emergency_boost_eligible: number; lifecycle_active: boolean; last_active_at: string | null; status_last_updated_at: string; id: number } | null = null;
     if (cursorParam) {
       try {
@@ -173,7 +343,7 @@ app.get('/providers', async (req: Request, res: Response) => {
 
     let query = `
       SELECT p.*,
-             (SELECT MAX(created_at) FROM activity_events WHERE provider_id = p.id) as last_active_at,
+             (SELECT COALESCE(MAX(created_at), '1900-01-01'::timestamp) FROM activity_events WHERE provider_id = p.id) as last_active_at,
              p.lifecycle_status,
              p.is_disputed,
              p.plan,
@@ -191,7 +361,8 @@ app.get('/providers', async (req: Request, res: Response) => {
              -- Emergency boost eligibility (only for premium-active providers with EMERGENCY_READY)
              CASE WHEN (p.plan = 'PREMIUM' AND (p.plan_source != 'TRIAL' OR p.trial_end_at > NOW())) AND
                        EXISTS (SELECT 1 FROM provider_badges WHERE provider_id = p.id AND badge = 'EMERGENCY_READY')
-                  THEN 1 ELSE 0 END as emergency_boost_eligible
+                  THEN 1 ELSE 0 END as emergency_boost_eligible,
+             (SELECT array_agg(c.name) FROM categories c JOIN provider_categories pc ON c.id = pc.category_id WHERE pc.provider_id = p.id) as categories
       FROM providers p
       WHERE p.lifecycle_status != 'ARCHIVED'
     `;
@@ -210,9 +381,9 @@ app.get('/providers', async (req: Request, res: Response) => {
       paramIndex++;
     }
 
-    if (category) {
-      query += ` AND EXISTS (SELECT 1 FROM provider_categories pc JOIN categories c ON pc.category_id = c.id WHERE pc.provider_id = p.id AND c.name = $${paramIndex})`;
-      params.push(category);
+    if (categoryId) {
+      query += ` AND EXISTS (SELECT 1 FROM provider_categories pc WHERE pc.provider_id = p.id AND pc.category_id = $${paramIndex})`;
+      params.push(categoryId);
       paramIndex++;
     }
 
@@ -223,24 +394,89 @@ app.get('/providers', async (req: Request, res: Response) => {
     }
 
     if (cursor) {
-      query += ` AND (
-        trust_tier < $${paramIndex} OR
-        (trust_tier = $${paramIndex} AND is_premium_active < $${paramIndex + 1}) OR
-        (trust_tier = $${paramIndex} AND is_premium_active = $${paramIndex + 1} AND emergency_boost_eligible < $${paramIndex + 2}) OR
-        (trust_tier = $${paramIndex} AND is_premium_active = $${paramIndex + 1} AND emergency_boost_eligible = $${paramIndex + 2} AND (p.lifecycle_status = 'ACTIVE') < $${paramIndex + 3}) OR
-        (trust_tier = $${paramIndex} AND is_premium_active = $${paramIndex + 1} AND emergency_boost_eligible = $${paramIndex + 2} AND (p.lifecycle_status = 'ACTIVE') = $${paramIndex + 3} AND (SELECT MAX(created_at) FROM activity_events WHERE provider_id = p.id) < $${paramIndex + 4}) OR
-        (trust_tier = $${paramIndex} AND is_premium_active = $${paramIndex + 1} AND emergency_boost_eligible = $${paramIndex + 2} AND (p.lifecycle_status = 'ACTIVE') = $${paramIndex + 3} AND (SELECT MAX(created_at) FROM activity_events WHERE provider_id = p.id) = $${paramIndex + 4} AND p.status_last_updated_at < $${paramIndex + 5}) OR
-        (trust_tier = $${paramIndex} AND is_premium_active = $${paramIndex + 1} AND emergency_boost_eligible = $${paramIndex + 2} AND (p.lifecycle_status = 'ACTIVE') = $${paramIndex + 3} AND (SELECT MAX(created_at) FROM activity_events WHERE provider_id = p.id) = $${paramIndex + 4} AND p.status_last_updated_at = $${paramIndex + 5} AND p.id > $${paramIndex + 6})
-      )`;
-      params.push(cursor.trust_tier, cursor.is_premium_active, cursor.emergency_boost_eligible, cursor.lifecycle_active, cursor.last_active_at, cursor.status_last_updated_at, cursor.id);
-      paramIndex += 7;
+      if (emergencyMode) {
+        query += ` AND (
+          (CASE
+            WHEN EXISTS (SELECT 1 FROM provider_badges WHERE provider_id = p.id AND badge = 'GOV_APPROVED') THEN 3
+            WHEN EXISTS (SELECT 1 FROM provider_badges WHERE provider_id = p.id AND badge = 'VERIFIED') THEN 2
+            ELSE 1
+          END) < $${paramIndex} OR
+          ((CASE
+            WHEN EXISTS (SELECT 1 FROM provider_badges WHERE provider_id = p.id AND badge = 'GOV_APPROVED') THEN 3
+            WHEN EXISTS (SELECT 1 FROM provider_badges WHERE provider_id = p.id AND badge = 'VERIFIED') THEN 2
+            ELSE 1
+          END) = $${paramIndex} AND (p.plan = 'PREMIUM' AND (p.plan_source != 'TRIAL' OR p.trial_end_at > NOW())) < $${paramIndex + 1}) OR
+          ((CASE
+            WHEN EXISTS (SELECT 1 FROM provider_badges WHERE provider_id = p.id AND badge = 'GOV_APPROVED') THEN 3
+            WHEN EXISTS (SELECT 1 FROM provider_badges WHERE provider_id = p.id AND badge = 'VERIFIED') THEN 2
+            ELSE 1
+          END) = $${paramIndex} AND (p.plan = 'PREMIUM' AND (p.plan_source != 'TRIAL' OR p.trial_end_at > NOW())) = $${paramIndex + 1} AND (CASE WHEN (p.plan = 'PREMIUM' AND (p.plan_source != 'TRIAL' OR p.trial_end_at > NOW())) AND EXISTS (SELECT 1 FROM provider_badges WHERE provider_id = p.id AND badge = 'EMERGENCY_READY') THEN 1 ELSE 0 END) < $${paramIndex + 2}) OR
+          ((CASE
+            WHEN EXISTS (SELECT 1 FROM provider_badges WHERE provider_id = p.id AND badge = 'GOV_APPROVED') THEN 3
+            WHEN EXISTS (SELECT 1 FROM provider_badges WHERE provider_id = p.id AND badge = 'VERIFIED') THEN 2
+            ELSE 1
+          END) = $${paramIndex} AND (p.plan = 'PREMIUM' AND (p.plan_source != 'TRIAL' OR p.trial_end_at > NOW())) = $${paramIndex + 1} AND (CASE WHEN (p.plan = 'PREMIUM' AND (p.plan_source != 'TRIAL' OR p.trial_end_at > NOW())) AND EXISTS (SELECT 1 FROM provider_badges WHERE provider_id = p.id AND badge = 'EMERGENCY_READY') THEN 1 ELSE 0 END) = $${paramIndex + 2} AND (p.lifecycle_status = 'ACTIVE') < $${paramIndex + 3}) OR
+          ((CASE
+            WHEN EXISTS (SELECT 1 FROM provider_badges WHERE provider_id = p.id AND badge = 'GOV_APPROVED') THEN 3
+            WHEN EXISTS (SELECT 1 FROM provider_badges WHERE provider_id = p.id AND badge = 'VERIFIED') THEN 2
+            ELSE 1
+          END) = $${paramIndex} AND (p.plan = 'PREMIUM' AND (p.plan_source != 'TRIAL' OR p.trial_end_at > NOW())) = $${paramIndex + 1} AND (CASE WHEN (p.plan = 'PREMIUM' AND (p.plan_source != 'TRIAL' OR p.trial_end_at > NOW())) AND EXISTS (SELECT 1 FROM provider_badges WHERE provider_id = p.id AND badge = 'EMERGENCY_READY') THEN 1 ELSE 0 END) = $${paramIndex + 2} AND (p.lifecycle_status = 'ACTIVE') = $${paramIndex + 3} AND (SELECT MAX(created_at) FROM activity_events WHERE provider_id = p.id) < $${paramIndex + 4}) OR
+          ((CASE
+            WHEN EXISTS (SELECT 1 FROM provider_badges WHERE provider_id = p.id AND badge = 'GOV_APPROVED') THEN 3
+            WHEN EXISTS (SELECT 1 FROM provider_badges WHERE provider_id = p.id AND badge = 'VERIFIED') THEN 2
+            ELSE 1
+          END) = $${paramIndex} AND (p.plan = 'PREMIUM' AND (p.plan_source != 'TRIAL' OR p.trial_end_at > NOW())) = $${paramIndex + 1} AND (CASE WHEN (p.plan = 'PREMIUM' AND (p.plan_source != 'TRIAL' OR p.trial_end_at > NOW())) AND EXISTS (SELECT 1 FROM provider_badges WHERE provider_id = p.id AND badge = 'EMERGENCY_READY') THEN 1 ELSE 0 END) = $${paramIndex + 2} AND (p.lifecycle_status = 'ACTIVE') = $${paramIndex + 3} AND (SELECT MAX(created_at) FROM activity_events WHERE provider_id = p.id) = $${paramIndex + 4} AND p.status_last_updated_at < $${paramIndex + 5}) OR
+          ((CASE
+            WHEN EXISTS (SELECT 1 FROM provider_badges WHERE provider_id = p.id AND badge = 'GOV_APPROVED') THEN 3
+            WHEN EXISTS (SELECT 1 FROM provider_badges WHERE provider_id = p.id AND badge = 'VERIFIED') THEN 2
+            ELSE 1
+          END) = $${paramIndex} AND (p.plan = 'PREMIUM' AND (p.plan_source != 'TRIAL' OR p.trial_end_at > NOW())) = $${paramIndex + 1} AND (CASE WHEN (p.plan = 'PREMIUM' AND (p.plan_source != 'TRIAL' OR p.trial_end_at > NOW())) AND EXISTS (SELECT 1 FROM provider_badges WHERE provider_id = p.id AND badge = 'EMERGENCY_READY') THEN 1 ELSE 0 END) = $${paramIndex + 2} AND (p.lifecycle_status = 'ACTIVE') = $${paramIndex + 3} AND (SELECT MAX(created_at) FROM activity_events WHERE provider_id = p.id) = $${paramIndex + 4} AND p.status_last_updated_at = $${paramIndex + 5} AND p.id > $${paramIndex + 6})
+        )`;
+        params.push(cursor.trust_tier, cursor.is_premium_active, cursor.emergency_boost_eligible, cursor.lifecycle_active, cursor.last_active_at, cursor.status_last_updated_at, cursor.id);
+        paramIndex += 7;
+      } else {
+        query += ` AND (
+          (CASE
+            WHEN EXISTS (SELECT 1 FROM provider_badges WHERE provider_id = p.id AND badge = 'GOV_APPROVED') THEN 3
+            WHEN EXISTS (SELECT 1 FROM provider_badges WHERE provider_id = p.id AND badge = 'VERIFIED') THEN 2
+            ELSE 1
+          END) < $${paramIndex} OR
+          ((CASE
+            WHEN EXISTS (SELECT 1 FROM provider_badges WHERE provider_id = p.id AND badge = 'GOV_APPROVED') THEN 3
+            WHEN EXISTS (SELECT 1 FROM provider_badges WHERE provider_id = p.id AND badge = 'VERIFIED') THEN 2
+            ELSE 1
+          END) = $${paramIndex} AND (p.plan = 'PREMIUM' AND (p.plan_source != 'TRIAL' OR p.trial_end_at > NOW())) < $${paramIndex + 1}) OR
+          ((CASE
+            WHEN EXISTS (SELECT 1 FROM provider_badges WHERE provider_id = p.id AND badge = 'GOV_APPROVED') THEN 3
+            WHEN EXISTS (SELECT 1 FROM provider_badges WHERE provider_id = p.id AND badge = 'VERIFIED') THEN 2
+            ELSE 1
+          END) = $${paramIndex} AND (p.plan = 'PREMIUM' AND (p.plan_source != 'TRIAL' OR p.trial_end_at > NOW())) = $${paramIndex + 1} AND (p.lifecycle_status = 'ACTIVE') < $${paramIndex + 2}) OR
+          ((CASE
+            WHEN EXISTS (SELECT 1 FROM provider_badges WHERE provider_id = p.id AND badge = 'GOV_APPROVED') THEN 3
+            WHEN EXISTS (SELECT 1 FROM provider_badges WHERE provider_id = p.id AND badge = 'VERIFIED') THEN 2
+            ELSE 1
+          END) = $${paramIndex} AND (p.plan = 'PREMIUM' AND (p.plan_source != 'TRIAL' OR p.trial_end_at > NOW())) = $${paramIndex + 1} AND (p.lifecycle_status = 'ACTIVE') = $${paramIndex + 2} AND (SELECT MAX(created_at) FROM activity_events WHERE provider_id = p.id) < $${paramIndex + 3}) OR
+          ((CASE
+            WHEN EXISTS (SELECT 1 FROM provider_badges WHERE provider_id = p.id AND badge = 'GOV_APPROVED') THEN 3
+            WHEN EXISTS (SELECT 1 FROM provider_badges WHERE provider_id = p.id AND badge = 'VERIFIED') THEN 2
+            ELSE 1
+          END) = $${paramIndex} AND (p.plan = 'PREMIUM' AND (p.plan_source != 'TRIAL' OR p.trial_end_at > NOW())) = $${paramIndex + 1} AND (p.lifecycle_status = 'ACTIVE') = $${paramIndex + 2} AND (SELECT MAX(created_at) FROM activity_events WHERE provider_id = p.id) = $${paramIndex + 3} AND p.status_last_updated_at < $${paramIndex + 4}) OR
+          ((CASE
+            WHEN EXISTS (SELECT 1 FROM provider_badges WHERE provider_id = p.id AND badge = 'GOV_APPROVED') THEN 3
+            WHEN EXISTS (SELECT 1 FROM provider_badges WHERE provider_id = p.id AND badge = 'VERIFIED') THEN 2
+            ELSE 1
+          END) = $${paramIndex} AND (p.plan = 'PREMIUM' AND (p.plan_source != 'TRIAL' OR p.trial_end_at > NOW())) = $${paramIndex + 1} AND (p.lifecycle_status = 'ACTIVE') = $${paramIndex + 2} AND (SELECT MAX(created_at) FROM activity_events WHERE provider_id = p.id) = $${paramIndex + 3} AND p.status_last_updated_at = $${paramIndex + 4} AND p.id > $${paramIndex + 5})
+        )`;
+        params.push(cursor.trust_tier, cursor.is_premium_active, cursor.lifecycle_active, cursor.last_active_at, cursor.status_last_updated_at, cursor.id);
+        paramIndex += 6;
+      }
     }
 
     query += ` ORDER BY trust_tier DESC,
                is_premium_active DESC,
                ${emergencyMode ? 'emergency_boost_eligible DESC,' : ''}
                (p.lifecycle_status = 'ACTIVE') DESC,
-               (SELECT MAX(created_at) FROM activity_events WHERE provider_id = p.id) DESC NULLS LAST,
+               (SELECT COALESCE(MAX(created_at), '1900-01-01'::timestamp) FROM activity_events WHERE provider_id = p.id) DESC,
                p.status_last_updated_at DESC,
                p.id ASC
                LIMIT $${paramIndex}`;
@@ -266,26 +502,19 @@ app.get('/providers', async (req: Request, res: Response) => {
     let suggestions: any[] = [];
     if (providers.length === 0) {
       // Generate suggestions
-      if (status === 'TODAY') {
+      if (status === 'OPEN_NOW') {
         suggestions.push({
-          id: 'expand_today',
-          label: 'Available next 3 days',
-          description: 'Expand availability to next 3 days',
-          patch: { status: 'NEXT_3_DAYS' }
+          id: 'expand_open',
+          label: 'Busy / Limited availability',
+          description: 'Include providers with busy or limited availability',
+          patch: { status: 'BUSY_LIMITED' }
         });
-      } else if (status === 'NEXT_3_DAYS') {
+      } else if (status === 'BUSY_LIMITED') {
         suggestions.push({
-          id: 'expand_3days',
-          label: 'Available this week',
-          description: 'Expand availability to this week',
-          patch: { status: 'THIS_WEEK' }
-        });
-      } else if (status === 'THIS_WEEK') {
-        suggestions.push({
-          id: 'expand_week',
-          label: 'Available next week',
-          description: 'Expand availability to next week',
-          patch: { status: 'NEXT_WEEK' }
+          id: 'expand_busy',
+          label: 'Not taking work',
+          description: 'Include all providers regardless of availability',
+          patch: { status: 'NOT_TAKING_WORK' }
         });
       }
       // Nearby areas: simplified, suggest removing island filter if present, or top areas
@@ -350,58 +579,48 @@ app.post('/providers', async (req, res) => {
   try {
     const {
       name,
+      email,
+      password,
       phone,
-      whatsapp,
       island,
       categories,
-      areas,
-      contact_call_enabled = true,
-      contact_whatsapp_enabled = true,
-      contact_sms_enabled = true,
-      preferred_contact_method,
-      typical_hours,
       emergency_calls_accepted = false
     } = req.body;
 
     // Validation
-    if (!name || !phone || !island) {
-      return res.status(400).json({ error: 'Name, phone, and island are required' });
+    if (!name || !phone || !island || !email || !password) {
+      return res.status(400).json({ error: 'Name, phone, island, email, and password are required' });
     }
-    
-    // Validate island parameter
-    const validIslands = ['STT', 'STX', 'STJ'];
-    if (!validIslands.includes(island)) {
-      return res.status(400).json({ error: { code: 'INVALID_ISLAND', message: 'Island must be one of: STT, STX, STJ', fieldErrors: { island: 'Must be STT, STX, or STJ' } } });
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      return res.status(400).json({ error: 'Please provide a valid email address' });
     }
-    
-    if (!Array.isArray(areas) || areas.length === 0) {
-      return res.status(400).json({ error: 'At least one area is required' });
+    if (password.length < 8) {
+      return res.status(400).json({ error: 'Password must be at least 8 characters long' });
     }
-    if (!contact_call_enabled && !contact_whatsapp_enabled && !contact_sms_enabled) {
-      return res.status(400).json({ error: 'At least one contact method must be enabled' });
-    }
-    const enabledMethods = [];
-    if (contact_call_enabled) enabledMethods.push('CALL');
-    if (contact_whatsapp_enabled) enabledMethods.push('WHATSAPP');
-    if (contact_sms_enabled) enabledMethods.push('SMS');
-    if (preferred_contact_method && !enabledMethods.includes(preferred_contact_method)) {
-      return res.status(400).json({ error: 'Preferred contact method must be enabled' });
+    if (!categories || categories.length === 0) {
+      return res.status(400).json({ error: 'At least one category is required' });
     }
 
     const client = await pool.connect();
     try {
       await client.query('BEGIN');
+
+      // Hash the password
+      const salt = crypto.randomBytes(16).toString('hex');
+      const passwordHash = crypto.pbkdf2Sync(password, salt, 1000, 64, 'sha512').toString('hex');
+      const hashedPassword = `${salt}:${passwordHash}`;
+
       const trialStart = new Date();
       const trialEnd = new Date(trialStart.getTime() + 30 * 24 * 60 * 60 * 1000);
       const providerResult = await client.query(
         `INSERT INTO providers (
-          name, phone, whatsapp, island, plan, plan_source, trial_start_at, trial_end_at,
-          contact_call_enabled, contact_whatsapp_enabled, contact_sms_enabled,
-          preferred_contact_method, typical_hours, emergency_calls_accepted
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14) RETURNING id`,
-        [name, phone, whatsapp, island, 'PREMIUM', 'TRIAL', trialStart, trialEnd,
-         contact_call_enabled, contact_whatsapp_enabled, contact_sms_enabled,
-         preferred_contact_method, typical_hours, emergency_calls_accepted]
+          name, email, password_hash, phone, island, plan, plan_source, trial_start_at, trial_end_at,
+          contact_call_enabled, contact_sms_enabled,
+          emergency_calls_accepted
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12) RETURNING id`,
+        [name, email, hashedPassword, phone, island, 'PREMIUM', 'TRIAL', trialStart, trialEnd,
+         true, true,
+         emergency_calls_accepted]
       );
       const providerId = providerResult.rows[0].id;
 
@@ -409,14 +628,6 @@ app.post('/providers', async (req, res) => {
         const categoryResult = await client.query('SELECT id FROM categories WHERE name = $1', [categoryName]);
         if (categoryResult.rows.length > 0) {
           await client.query('INSERT INTO provider_categories (provider_id, category_id) VALUES ($1, $2)', [providerId, categoryResult.rows[0].id]);
-        }
-      }
-
-      for (const areaId of areas) {
-        // Validate area belongs to provider's island
-        const areaResult = await client.query('SELECT id FROM areas WHERE id = $1 AND island = $2', [areaId, island]);
-        if (areaResult.rows.length > 0) {
-          await client.query('INSERT INTO provider_areas (provider_id, area_id) VALUES ($1, $2)', [providerId, areaId]);
         }
       }
 
@@ -444,19 +655,133 @@ app.post('/providers', async (req, res) => {
   }
 });
 
+app.post('/login', async (req, res) => {
+  try {
+    const { email, password } = req.body;
+
+    if (!email || !password) {
+      return res.status(400).json({ error: 'Email and password are required' });
+    }
+
+    const result = await pool.query(
+      'SELECT id, name, password_hash FROM providers WHERE email = $1 AND lifecycle_status != \'ARCHIVED\'',
+      [email]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(401).json({ error: 'Invalid email or password' });
+    }
+
+    const provider = result.rows[0];
+    const [salt, hash] = provider.password_hash.split(':');
+
+    const passwordHash = crypto.pbkdf2Sync(password, salt, 1000, 64, 'sha512').toString('hex');
+
+    if (passwordHash !== hash) {
+      return res.status(401).json({ error: 'Invalid email or password' });
+    }
+
+    // Log the login activity
+    await ActivityService.logEvent(provider.id, 'LOGIN');
+
+    res.json({
+      id: provider.id,
+      name: provider.name,
+      token: `provider_${provider.id}_${Date.now()}` // Simple token for now
+    });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+app.post('/forgot-password', async (req, res) => {
+  try {
+    const { email } = req.body;
+
+    if (!email) {
+      return res.status(400).json({ error: 'Email is required' });
+    }
+
+    // Generate reset token
+    const resetToken = crypto.randomBytes(32).toString('hex');
+    const resetTokenExpires = new Date(Date.now() + 60 * 60 * 1000); // 1 hour
+
+    // Update provider with reset token
+    const result = await pool.query(
+      'UPDATE providers SET reset_token = $1, reset_token_expires = $2 WHERE email = $3 AND lifecycle_status != \'ARCHIVED\' RETURNING id',
+      [resetToken, resetTokenExpires, email]
+    );
+
+    // Always return success for security (don't reveal if email exists)
+    res.json({ message: 'If an account with that email exists, we have sent you a password reset link.' });
+
+    // Send password reset email if account exists
+    if (result.rows.length > 0) {
+      try {
+        await emailService.sendPasswordResetEmail(email, resetToken);
+      } catch (emailError) {
+        console.error('Failed to send password reset email:', emailError);
+        // Don't fail the request - user still gets success message for security
+      }
+    }
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+app.post('/reset-password', async (req, res) => {
+  try {
+    const { token, password } = req.body;
+
+    if (!token || !password) {
+      return res.status(400).json({ error: 'Token and password are required' });
+    }
+
+    if (password.length < 8) {
+      return res.status(400).json({ error: 'Password must be at least 8 characters long' });
+    }
+
+    // Find provider with valid reset token
+    const result = await pool.query(
+      'SELECT id FROM providers WHERE reset_token = $1 AND reset_token_expires > NOW() AND lifecycle_status != \'ARCHIVED\'',
+      [token]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(400).json({ error: 'Invalid or expired reset token' });
+    }
+
+    const providerId = result.rows[0].id;
+
+    // Hash new password
+    const salt = crypto.randomBytes(16).toString('hex');
+    const passwordHash = crypto.pbkdf2Sync(password, salt, 1000, 64, 'sha512').toString('hex');
+    const hashedPassword = `${salt}:${passwordHash}`;
+
+    // Update password and clear reset token
+    await pool.query(
+      'UPDATE providers SET password_hash = $1, reset_token = NULL, reset_token_expires = NULL WHERE id = $2',
+      [hashedPassword, providerId]
+    );
+
+    res.json({ message: 'Password reset successfully' });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 app.put('/providers/:id', async (req, res) => {
   try {
     const { id } = req.params;
     const {
       name,
       phone,
-      whatsapp,
-      island,
       categories,
       areas,
-      contact_call_enabled,
-      contact_whatsapp_enabled,
-      contact_sms_enabled,
+      island,
       preferred_contact_method,
       typical_hours,
       emergency_calls_accepted
@@ -467,25 +792,9 @@ app.put('/providers/:id', async (req, res) => {
       return res.status(400).json({ error: 'At least one area is required' });
     }
     
-    // Validate island parameter if provided
-    if (island !== undefined) {
-      const validIslands = ['STT', 'STX', 'STJ'];
-      if (!validIslands.includes(island)) {
-        return res.status(400).json({ error: { code: 'INVALID_ISLAND', message: 'Island must be one of: STT, STX, STJ', fieldErrors: { island: 'Must be STT, STX, or STJ' } } });
-      }
-    }
-    
-    if (typeof contact_call_enabled === 'boolean' && typeof contact_whatsapp_enabled === 'boolean' && typeof contact_sms_enabled === 'boolean') {
-      if (!contact_call_enabled && !contact_whatsapp_enabled && !contact_sms_enabled) {
-        return res.status(400).json({ error: 'At least one contact method must be enabled' });
-      }
-      const enabledMethods = [];
-      if (contact_call_enabled) enabledMethods.push('CALL');
-      if (contact_whatsapp_enabled) enabledMethods.push('WHATSAPP');
-      if (contact_sms_enabled) enabledMethods.push('SMS');
-      if (preferred_contact_method && !enabledMethods.includes(preferred_contact_method)) {
-        return res.status(400).json({ error: 'Preferred contact method must be enabled' });
-      }
+    const enabledMethods = ['CALL', 'SMS'];
+    if (preferred_contact_method && !enabledMethods.includes(preferred_contact_method)) {
+      return res.status(400).json({ error: 'Preferred contact method must be enabled' });
     }
 
     const client = await pool.connect();
@@ -505,31 +814,18 @@ app.put('/providers/:id', async (req, res) => {
         updateValues.push(phone);
         paramIndex++;
       }
-      if (whatsapp !== undefined) {
-        updateFields.push(`whatsapp = $${paramIndex}`);
-        updateValues.push(whatsapp);
-        paramIndex++;
-      }
       if (island !== undefined) {
         updateFields.push(`island = $${paramIndex}`);
         updateValues.push(island);
         paramIndex++;
       }
-      if (contact_call_enabled !== undefined) {
-        updateFields.push(`contact_call_enabled = $${paramIndex}`);
-        updateValues.push(contact_call_enabled);
-        paramIndex++;
-      }
-      if (contact_whatsapp_enabled !== undefined) {
-        updateFields.push(`contact_whatsapp_enabled = $${paramIndex}`);
-        updateValues.push(contact_whatsapp_enabled);
-        paramIndex++;
-      }
-      if (contact_sms_enabled !== undefined) {
-        updateFields.push(`contact_sms_enabled = $${paramIndex}`);
-        updateValues.push(contact_sms_enabled);
-        paramIndex++;
-      }
+      // Contact methods are always enabled
+      updateFields.push(`contact_call_enabled = $${paramIndex}`);
+      updateValues.push(true);
+      paramIndex++;
+      updateFields.push(`contact_sms_enabled = $${paramIndex}`);
+      updateValues.push(true);
+      paramIndex++;
       if (preferred_contact_method !== undefined) {
         updateFields.push(`preferred_contact_method = $${paramIndex}`);
         updateValues.push(preferred_contact_method);
@@ -578,6 +874,10 @@ app.put('/providers/:id', async (req, res) => {
 
       await client.query('COMMIT');
       await ActivityService.logEvent(parseInt(id), 'PROFILE_UPDATED');
+      
+      // Check and update verification status after profile update
+      await VerificationService.updateVerificationStatus(parseInt(id));
+      
       res.json({ message: 'Updated' });
     } catch (err) {
       await client.query('ROLLBACK');
@@ -596,8 +896,99 @@ app.put('/providers/:id/status', async (req, res) => {
     const { id } = req.params;
     const { status } = req.body;
     await pool.query('UPDATE providers SET status = $1, last_updated_at = CURRENT_TIMESTAMP WHERE id = $2', [status, id]);
-    await ActivityService.logEvent(parseInt(id), 'STATUS_UPDATED');
+    
+    // Log appropriate activity event
+    const eventType = status === 'OPEN_NOW' ? 'STATUS_OPEN_FOR_WORK' : 'STATUS_UPDATED';
+    await ActivityService.logEvent(parseInt(id), eventType);
+    
+    // Check and update verification status after activity
+    await VerificationService.updateVerificationStatus(parseInt(id));
+    
     res.json({ message: 'Status updated' });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+app.post('/providers/:id/customer-interaction', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { type } = req.body; // 'call', 'sms'
+    
+    if (!['call', 'sms'].includes(type)) {
+      return res.status(400).json({ error: 'Invalid interaction type. Must be "call" or "sms"' });
+    }
+    
+    const eventType = type === 'call' ? 'CUSTOMER_CALL' : 'CUSTOMER_SMS';
+    
+    await ActivityService.logEvent(parseInt(id), eventType);
+    
+    // Check and update verification status after interaction
+    await VerificationService.updateVerificationStatus(parseInt(id));
+    
+    res.json({ message: 'Interaction logged' });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+app.post('/providers/:id/profile-view', async (req, res) => {
+  try {
+    const { id } = req.params;
+    await ActivityService.logEvent(parseInt(id), 'PROFILE_VIEW');
+    
+    // Check and update verification status after view
+    await VerificationService.updateVerificationStatus(parseInt(id));
+    
+    res.json({ message: 'Profile view logged' });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+app.post('/providers/:id/login', async (req, res) => {
+  try {
+    const { id } = req.params;
+    await ActivityService.logEvent(parseInt(id), 'LOGIN');
+    
+    // Check and update verification status after login
+    await VerificationService.updateVerificationStatus(parseInt(id));
+    
+    res.json({ message: 'Login logged' });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+app.get('/providers/:id/insights', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { range = '7d' } = req.query;
+    
+    // Calculate date range
+    const days = range === '30d' ? 30 : 7;
+    const startDate = new Date();
+    startDate.setDate(startDate.getDate() - days);
+    
+    const result = await pool.query(`
+      SELECT 
+        COUNT(CASE WHEN type = 'CUSTOMER_CALL' THEN 1 END) as calls,
+        COUNT(CASE WHEN type = 'CUSTOMER_SMS' THEN 1 END) as sms
+      FROM activity_events 
+      WHERE provider_id = $1 
+        AND created_at >= $2
+        AND type IN ('CUSTOMER_CALL', 'CUSTOMER_SMS')
+    `, [id, startDate.toISOString()]);
+    
+    const insights = result.rows[0];
+    res.json({
+      calls: parseInt(insights.calls) || 0,
+      sms: parseInt(insights.sms) || 0
+    });
   } catch (error) {
     console.error(error);
     res.status(500).json({ error: 'Internal server error' });
@@ -620,17 +1011,72 @@ app.post('/reports', async (req, res) => {
 
 app.get('/admin/providers', adminAuth, async (req, res) => {
   try {
-    const query = `
+    const { island, categoryId, status, areaId } = req.query;
+
+    // Validate island parameter
+    const validIslands = ['STT', 'STX', 'STJ'];
+    if (island && typeof island === 'string' && !validIslands.includes(island)) {
+      return res.status(400).json({ error: { code: 'INVALID_ISLAND', message: 'Island must be one of: STT, STX, STJ', fieldErrors: { island: 'Must be STT, STX, or STJ' } } });
+    }
+
+    // Validate status parameter
+    const validStatuses = ['OPEN_NOW', 'BUSY_LIMITED', 'NOT_TAKING_WORK'];
+    if (status && typeof status === 'string' && !validStatuses.includes(status)) {
+      return res.status(400).json({ error: { code: 'INVALID_STATUS', message: 'Status must be one of: OPEN_NOW, BUSY_LIMITED, NOT_TAKING_WORK', fieldErrors: { status: 'Invalid status value' } } });
+    }
+
+    // Validate categoryId parameter
+    if (categoryId && (typeof categoryId !== 'string' || isNaN(parseInt(categoryId, 10)))) {
+      return res.status(400).json({ error: { code: 'INVALID_CATEGORY_ID', message: 'Category ID must be a valid number', fieldErrors: { categoryId: 'Must be a valid number' } } });
+    }
+
+    // Validate areaId parameter
+    if (areaId && (typeof areaId !== 'string' || isNaN(parseInt(areaId, 10)))) {
+      return res.status(400).json({ error: { code: 'INVALID_AREA_ID', message: 'Area ID must be a valid number', fieldErrors: { areaId: 'Must be a valid number' } } });
+    }
+
+    let query = `
       SELECT p.*,
              (SELECT MAX(created_at) FROM activity_events WHERE provider_id = p.id) as last_active_at,
-             (p.plan = 'PREMIUM' AND p.trial_end_at > NOW()) as is_premium,
+             (p.plan = 'PREMIUM' AND (p.plan_source != 'TRIAL' OR p.trial_end_at > NOW())) as is_premium_active,
              CASE WHEN p.trial_end_at > NOW() THEN CEIL(EXTRACT(EPOCH FROM (p.trial_end_at - NOW())) / 86400) ELSE 0 END as trial_days_left,
+             CASE WHEN p.plan_source = 'TRIAL' AND p.trial_end_at > NOW() THEN true ELSE false END as is_trial,
              p.is_disputed,
-             p.disputed_at
+             p.disputed_at,
+             p.lifecycle_status
       FROM providers p
-      ORDER BY p.created_at DESC
+      WHERE 1=1
     `;
-    const result = await pool.query(query);
+    const params: any[] = [];
+    let paramIndex = 1;
+
+    if (status) {
+      query += ` AND p.status = $${paramIndex}`;
+      params.push(status);
+      paramIndex++;
+    }
+
+    if (island) {
+      query += ` AND p.island = $${paramIndex}`;
+      params.push(island);
+      paramIndex++;
+    }
+
+    if (categoryId) {
+      query += ` AND EXISTS (SELECT 1 FROM provider_categories pc WHERE pc.provider_id = p.id AND pc.category_id = $${paramIndex})`;
+      params.push(categoryId);
+      paramIndex++;
+    }
+
+    if (areaId) {
+      query += ` AND EXISTS (SELECT 1 FROM provider_areas pa WHERE pa.provider_id = p.id AND pa.area_id = $${paramIndex})`;
+      params.push(areaId);
+      paramIndex++;
+    }
+
+    query += ` ORDER BY p.created_at DESC`;
+
+    const result = await pool.query(query, params);
     res.json(result.rows);
   } catch (error) {
     console.error(error);
@@ -932,7 +1378,60 @@ app.patch('/admin/settings/emergency-mode', adminAuth, async (req, res) => {
   }
 });
 
+// Temporary migration endpoint
+app.post('/migrate-islands', async (req: Request, res: Response) => {
+  try {
+    console.log('Starting island migration...');
+
+    // Update providers table
+    await pool.query(`
+      UPDATE providers
+      SET island = CASE
+        WHEN island = 'St. Thomas' THEN 'STT'
+        WHEN island = 'St. Croix' THEN 'STX'
+        WHEN island = 'St. John' THEN 'STJ'
+        ELSE island
+      END
+    `);
+
+    // Update areas table
+    await pool.query(`
+      UPDATE areas
+      SET island = CASE
+        WHEN island = 'St. Thomas' THEN 'STT'
+        WHEN island = 'St. Croix' THEN 'STX'
+        WHEN island = 'St. John' THEN 'STJ'
+        ELSE island
+      END
+    `);
+
+    console.log('Island migration completed successfully');
+
+    // Verify the changes
+    const providersResult = await pool.query('SELECT DISTINCT island FROM providers ORDER BY island');
+    const areasResult = await pool.query('SELECT DISTINCT island FROM areas ORDER BY island');
+
+    res.json({
+      success: true,
+      message: 'Island migration completed',
+      providers: providersResult.rows,
+      areas: areasResult.rows
+    });
+  } catch (error) {
+    console.error('Migration failed:', error);
+    res.status(500).json({ error: 'Migration failed', details: error instanceof Error ? error.message : 'Unknown error' });
+  }
+});
+
 if (process.env.NODE_ENV !== 'test') {
+  // Run initial verification check
+  VerificationService.checkAndUpdateAllProviders();
+  
+  // Schedule verification checks every 6 hours
+  setInterval(() => {
+    VerificationService.checkAndUpdateAllProviders();
+  }, 6 * 60 * 60 * 1000); // 6 hours
+  
   app.listen(port, '0.0.0.0', () => {
     console.log(`Server running on http://0.0.0.0:${port}`);
     console.log(`Accessible at http://localhost:${port} and http://192.168.1.245:${port}`);

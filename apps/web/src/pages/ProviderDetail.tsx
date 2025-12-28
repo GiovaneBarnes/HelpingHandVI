@@ -39,11 +39,10 @@ const getIslandDisplayName = (islandCode: string) => {
 
 const getAvailabilityColor = (status: string) => {
   switch (status) {
-    case 'TODAY': return 'success';
-    case 'NEXT_3_DAYS': return 'warning';
-    case 'THIS_WEEK': return 'info';
-    case 'NEXT_WEEK': return 'secondary';
-    default: return 'error';
+    case 'OPEN_NOW': return 'success';
+    case 'BUSY_LIMITED': return 'warning';
+    case 'NOT_TAKING_WORK': return 'error';
+    default: return 'secondary';
   }
 };
 
@@ -107,76 +106,72 @@ export const ProviderDetail: React.FC = () => {
     <div className="container mx-auto px-4 py-8">
       {loading ? (
         <div>Loading...</div>
-      ) : provider ? (
-        <Card className="max-w-2xl mx-auto">
-          <h1 className="text-3xl font-bold mb-4">{provider.name}</h1>
-          <p className="text-gray-600 mb-2">{getIslandDisplayName(provider.island)}</p>
-          <Badge label={provider.status} variant={getAvailabilityColor(provider.status)} className="mb-4" />
-          {provider.is_premium_active && (
-            <Badge label={provider.is_trial ? "Trial" : "Premium"} variant="success" className="mb-4 ml-2" />
-          )}
-          <p className="text-sm text-gray-500 mb-4">
-            Profile activity: {provider.last_active_at ? `${getHoursAgo(provider.last_active_at)} hours ago` : 'Never'}
-          </p>
-
-          <div className="mb-4 p-3 bg-gray-50 rounded-lg">
-            <h3 className="text-sm font-medium text-gray-800 mb-2">Availability</h3>
-            <p className="text-sm text-gray-600">
-              Availability shows when this provider is generally open to new work. It is not a scheduled appointment.
-            </p>
-            <p className="text-sm text-gray-600 mt-1">
-              Confirm timing directly with the provider.
-            </p>
-          </div>
-
-          {provider.preferred_contact_method && (
-            <p className="text-sm text-gray-600 mb-4">
-              Preferred contact: {provider.preferred_contact_method}
-            </p>
-          )}
-          <Button onClick={handleReport} variant="secondary" className="mb-4">Report this listing</Button>
-
-          {provider.typical_hours && (
-            <div className="mb-4">
-              <h2 className="text-xl font-semibold mb-2">Hours</h2>
-              <p>{provider.typical_hours}</p>
-              {provider.emergency_calls_accepted && (
-                <Badge label="Emergency Calls Accepted" variant="warning" className="mt-2" />
-              )}
-            </div>
-          )}
-
-          <div className="mb-4">
-            <h2 className="text-xl font-semibold mb-2">Service Areas</h2>
-            <div className="flex flex-wrap gap-2">
-              {provider.areas.map(area => (
-                <Badge key={area.id} label={area.name} variant="secondary" />
-              ))}
-            </div>
-          </div>
-
-          <div className="mb-4">
-            <h2 className="text-xl font-semibold mb-2">Contact</h2>
-            <DisclaimerNotice variant="full" className="mb-3" />
-            <div className="flex flex-wrap gap-2">
-              {provider.contact_call_enabled && (
-                <Button href={`tel:${provider.phone}`}>📞 Call</Button>
-              )}
-              {provider.contact_whatsapp_enabled && provider.whatsapp && (
-                <Button href={`https://wa.me/${normalizePhoneNumber(provider.whatsapp)}`} variant="secondary">
-                  💬 WhatsApp
-                </Button>
-              )}
-              {provider.contact_sms_enabled && (
-                <Button href={`sms:${normalizePhoneNumber(provider.phone)}`} variant="secondary">
-                  💬 SMS
-                </Button>
-              )}
-            </div>
-          </div>
-        </Card>
-      ) : (
+      ) : !provider ? (
         <div>Provider not found</div>
+      ) : (
+        <>
+          <h1 className="text-3xl font-bold mb-8 text-center">Provider Profile</h1>
+
+          <div className="max-w-4xl mx-auto">
+            <Card className="mb-6">
+              <h1 className="text-3xl font-bold mb-4">{provider.name}</h1>
+                <p className="text-gray-600 mb-2">{getIslandDisplayName(provider.island)}</p>
+                <Badge label={provider.status} variant={getAvailabilityColor(provider.status)} className="mb-4" />
+                {provider.is_premium_active && (
+                  <Badge label={provider.is_trial ? "Trial" : "Premium"} variant="success" className="mb-4 ml-2" />
+                )}
+                <p className="text-sm text-gray-500 mb-4">
+                  Profile activity: {provider.last_active_at ? `${getHoursAgo(provider.last_active_at)} hours ago` : 'Never'}
+                </p>
+
+            {provider.preferred_contact_method && (
+              <p className="text-sm text-gray-600 mb-4">
+                Preferred contact: {provider.preferred_contact_method}
+              </p>
+            )}
+            <Button onClick={handleReport} variant="secondary" className="mb-4">Report this listing</Button>
+
+            {provider.typical_hours && (
+              <div className="mb-4">
+                <h2 className="text-xl font-semibold mb-2">Hours</h2>
+                <p>{provider.typical_hours}</p>
+                {provider.emergency_calls_accepted && (
+                  <Badge label="Emergency Calls Accepted" variant="warning" className="mt-2" />
+                )}
+              </div>
+            )}
+
+            <div className="mb-4">
+              <h2 className="text-xl font-semibold mb-2">Service Areas</h2>
+              <div className="flex flex-wrap gap-2">
+                {provider.areas.map(area => (
+                  <Badge key={area.id} label={area.name} variant="secondary" />
+                ))}
+              </div>
+            </div>
+
+            <div className="mb-4">
+              <h2 className="text-xl font-semibold mb-2">Contact</h2>
+              <DisclaimerNotice variant="full" className="mb-3" />
+              <div className="flex flex-wrap gap-2">
+                {provider.contact_call_enabled && (
+                  <Button href={`tel:${provider.phone}`}>📞 Call</Button>
+                )}
+                {provider.contact_whatsapp_enabled && provider.whatsapp && (
+                  <Button href={`https://wa.me/${normalizePhoneNumber(provider.whatsapp)}`} variant="secondary">
+                    💬 WhatsApp
+                  </Button>
+                )}
+                {provider.contact_sms_enabled && (
+                  <Button href={`sms:${normalizePhoneNumber(provider.phone)}`} variant="secondary">
+                    💬 SMS
+                  </Button>
+                )}
+              </div>
+            </div>
+          </Card>
+        </div>
+        </>
       )}
     </div>
   );

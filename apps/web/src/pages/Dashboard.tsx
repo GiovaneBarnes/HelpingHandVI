@@ -31,11 +31,10 @@ const API_BASE = `${window.location.protocol}//${window.location.hostname}:3000`
 
 const getAvailabilityColor = (status: string) => {
   switch (status) {
-    case 'TODAY': return 'success';
-    case 'NEXT_3_DAYS': return 'warning';
-    case 'THIS_WEEK': return 'info';
-    case 'NEXT_WEEK': return 'secondary';
-    default: return 'error';
+    case 'OPEN_NOW': return 'success';
+    case 'BUSY_LIMITED': return 'warning';
+    case 'NOT_TAKING_WORK': return 'error';
+    default: return 'secondary';
   }
 };
 
@@ -181,11 +180,9 @@ export const Dashboard: React.FC = () => {
             onChange={(e) => setStatus(e.target.value)}
             className="border rounded px-3 py-2"
           >
-            <option value="TODAY">Today</option>
-            <option value="NEXT_3_DAYS">Next 3 Days</option>
-            <option value="THIS_WEEK">This Week</option>
-            <option value="NEXT_WEEK">Next Week</option>
-            <option value="UNAVAILABLE">Unavailable</option>
+            <option value="OPEN_NOW">Available Now</option>
+            <option value="BUSY_LIMITED">Busy/Limited</option>
+            <option value="NOT_TAKING_WORK">Not Taking Work</option>
           </select>
           <Button onClick={handleUpdateStatus} className="ml-2">Update Status</Button>
         </div>

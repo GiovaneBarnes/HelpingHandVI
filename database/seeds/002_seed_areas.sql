@@ -1,50 +1,17 @@
 -- Seed initial areas (islands and neighborhoods)
-INSERT INTO areas (island, name) VALUES
+INSERT INTO areas (island, neighborhood) VALUES
 -- St. Thomas (STT)
 ('STT', 'Charlotte Amalie'),
 ('STT', 'East End'),
 ('STT', 'West End'),
-('STT', 'Northside'),
-('STT', 'Southside'),
-('STT', 'Cyril E. King Airport Area'),
-('STT', 'Red Hook'),
-('STT', 'Secret Harbour'),
-('STT', 'Magens Bay'),
-('STT', 'Sapphire Beach'),
-('STT', 'Coki Beach'),
-('STT', 'Mafolie'),
-('STT', 'Estate Tutu'),
-('STT', 'Estate Thomas'),
-('STT', 'Water Island'),
+('STT', 'North Shore'),
 
 -- St. John (STJ)
 ('STJ', 'Cruz Bay'),
 ('STJ', 'Coral Bay'),
 ('STJ', 'East End'),
-('STJ', 'North Shore'),
-('STJ', 'Centerline Road'),
-('STJ', 'Trunk Bay'),
-('STJ', 'Cinnamon Bay'),
-('STJ', 'Mahoe Bay'),
-('STJ', 'Francis Bay'),
-('STJ', 'Hawksnest Bay'),
-('STJ', 'Chocolate Hole'),
-('STJ', 'Fish Bay'),
-('STJ', 'Susannaberg'),
 
 -- St. Croix (STX)
 ('STX', 'Christiansted'),
 ('STX', 'Frederiksted'),
-('STX', 'East End'),
-('STX', 'Northside'),
-('STX', 'Southside'),
-('STX', 'Henry E. Rohlsen Airport Area'),
-('STX', 'Cane Bay'),
-('STX', 'Protestant Cay'),
-('STX', 'Buck Island'),
-('STX', 'Green Cay'),
-('STX', 'Sandy Point'),
-('STX', 'Carambola Beach'),
-('STX', 'Rainbow Beach'),
-('STX', 'Davis Bay'),
-('STX', 'Teague Bay');
+('STX', 'East End');

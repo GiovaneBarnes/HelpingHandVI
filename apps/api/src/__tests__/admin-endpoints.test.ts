@@ -57,6 +57,83 @@ describe('Admin Endpoints', () => {
       expect(response.status).toBe(401);
       expect(response.body.error).toBe('Unauthorized');
     });
+
+    it('should filter by island', async () => {
+      const mockProviders = [{ id: 1, name: 'STT Provider', island: 'STT' }];
+      (mockPool.query as jest.Mock).mockResolvedValue({ rows: mockProviders });
+
+      const response = await request(app)
+        .get('/admin/providers?island=STT')
+        .set(adminHeaders);
+
+      expect(response.status).toBe(200);
+      expect(mockPool.query).toHaveBeenCalledWith(
+        expect.stringContaining('p.island = $'),
+        expect.arrayContaining(['STT'])
+      );
+    });
+
+    it('should filter by status', async () => {
+      const mockProviders = [{ id: 1, name: 'Available Provider', status: 'OPEN_NOW' }];
+      (mockPool.query as jest.Mock).mockResolvedValue({ rows: mockProviders });
+
+      const response = await request(app)
+        .get('/admin/providers?status=OPEN_NOW')
+        .set(adminHeaders);
+
+      expect(response.status).toBe(200);
+      expect(mockPool.query).toHaveBeenCalledWith(
+        expect.stringContaining('p.status = $'),
+        expect.arrayContaining(['OPEN_NOW'])
+      );
+    });
+
+    it('should filter by category ID', async () => {
+      const mockProviders = [{ id: 1, name: 'Electrician' }];
+      (mockPool.query as jest.Mock).mockResolvedValue({ rows: mockProviders });
+
+      const response = await request(app)
+        .get('/admin/providers?categoryId=1')
+        .set(adminHeaders);
+
+      expect(response.status).toBe(200);
+      expect(mockPool.query).toHaveBeenCalledWith(
+        expect.stringContaining('EXISTS (SELECT 1 FROM provider_categories pc WHERE pc.provider_id = p.id AND pc.category_id = $'),
+        expect.arrayContaining(['1'])
+      );
+    });
+
+    it('should filter by area ID', async () => {
+      const mockProviders = [{ id: 1, name: 'Provider in Area' }];
+      (mockPool.query as jest.Mock).mockResolvedValue({ rows: mockProviders });
+
+      const response = await request(app)
+        .get('/admin/providers?areaId=1')
+        .set(adminHeaders);
+
+      expect(response.status).toBe(200);
+      expect(mockPool.query).toHaveBeenCalledWith(
+        expect.stringContaining('EXISTS (SELECT 1 FROM provider_areas pa WHERE pa.provider_id = p.id AND pa.area_id = $'),
+        expect.arrayContaining(['1'])
+      );
+    });
+
+    it('should apply multiple filters simultaneously', async () => {
+      const mockProviders = [{ id: 1, name: 'Filtered Provider' }];
+      (mockPool.query as jest.Mock).mockResolvedValue({ rows: mockProviders });
+
+      const response = await request(app)
+        .get('/admin/providers?island=STT&status=OPEN_NOW&categoryId=1&areaId=2')
+        .set(adminHeaders);
+
+      expect(response.status).toBe(200);
+      const queryCall = (mockPool.query as jest.Mock).mock.calls[0][0];
+      expect(queryCall).toContain('p.island = $');
+      expect(queryCall).toContain('p.status = $');
+      expect(queryCall).toContain('EXISTS (SELECT 1 FROM provider_categories pc WHERE pc.provider_id = p.id AND pc.category_id = $');
+      expect(queryCall).toContain('EXISTS (SELECT 1 FROM provider_areas pa WHERE pa.provider_id = p.id AND pa.area_id = $');
+      expect((mockPool.query as jest.Mock).mock.calls[0][1]).toEqual(expect.arrayContaining(['STT', 'OPEN_NOW', '1', '2']));
+    });
   });
 
   describe('PUT /admin/providers/:id/verify', () => {

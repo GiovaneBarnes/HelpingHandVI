@@ -17,12 +17,12 @@ describe('Trust Scoring System', () => {
     // Insert test providers with different combinations
     await pool.query(`
       INSERT INTO providers (id, name, phone, island, status, lifecycle_status, plan, trial_end_at) VALUES
-      (1, 'GOV Provider', '111', 'St. Thomas', 'TODAY', 'ACTIVE', 'FREE', NULL),
-      (2, 'Emergency Provider', '222', 'St. John', 'TODAY', 'ACTIVE', 'FREE', NULL),
-      (3, 'Verified Provider', '333', 'St. Croix', 'TODAY', 'ACTIVE', 'FREE', NULL),
-      (4, 'Premium Provider', '444', 'St. Thomas', 'TODAY', 'ACTIVE', 'PREMIUM', NOW() + INTERVAL '1 day'),
-      (5, 'Inactive Provider', '555', 'St. John', 'TODAY', 'INACTIVE', 'FREE', NULL),
-      (6, 'No Badges Provider', '666', 'St. Croix', 'TODAY', 'ACTIVE', 'FREE', NULL)
+      (1, 'GOV Provider', '111', 'St. Thomas', 'OPEN_NOW', 'ACTIVE', 'FREE', NULL),
+      (2, 'Emergency Provider', '222', 'St. John', 'OPEN_NOW', 'ACTIVE', 'FREE', NULL),
+      (3, 'Verified Provider', '333', 'St. Croix', 'OPEN_NOW', 'ACTIVE', 'FREE', NULL),
+      (4, 'Premium Provider', '444', 'St. Thomas', 'OPEN_NOW', 'ACTIVE', 'PREMIUM', NOW() + INTERVAL '1 day'),
+      (5, 'Inactive Provider', '555', 'St. John', 'OPEN_NOW', 'INACTIVE', 'FREE', NULL),
+      (6, 'No Badges Provider', '666', 'St. Croix', 'OPEN_NOW', 'ACTIVE', 'FREE', NULL)
     `);
 
     // Add badges
@@ -127,7 +127,7 @@ describe('Trust Scoring System', () => {
     // Add an archived provider
     await pool.query(`
       INSERT INTO providers (id, name, phone, island, status, lifecycle_status, plan) VALUES
-      (7, 'Archived Provider', '777', 'St. Thomas', 'TODAY', 'ARCHIVED', 'FREE')
+      (7, 'Archived Provider', '777', 'St. Thomas', 'OPEN_NOW', 'ARCHIVED', 'FREE')
     `);
 
     const result = await pool.query(`
@@ -146,8 +146,8 @@ describe('Trust Scoring System', () => {
     // Create providers with same trust score but different activity times
     await pool.query(`
       INSERT INTO providers (id, name, phone, island, status, lifecycle_status, plan) VALUES
-      (8, 'Tie Provider 1', '888', 'St. Thomas', 'TODAY', 'ACTIVE', 'FREE'),
-      (9, 'Tie Provider 2', '999', 'St. Thomas', 'TODAY', 'ACTIVE', 'FREE')
+      (8, 'Tie Provider 1', '888', 'St. Thomas', 'OPEN_NOW', 'ACTIVE', 'FREE'),
+      (9, 'Tie Provider 2', '999', 'St. Thomas', 'OPEN_NOW', 'ACTIVE', 'FREE')
     `);
 
     await pool.query(`

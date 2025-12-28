@@ -33,15 +33,17 @@ export const AdminProviders: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [filters, setFilters] = useState({
     island: '',
-    category: '',
+    categoryId: '',
     status: '',
   });
+  const [availableCategories, setAvailableCategories] = useState<Array<{ id: number; name: string }>>([]);
 
   useEffect(() => {
     if (!localStorage.getItem('admin_logged_in')) {
       navigate('/admin/login');
       return;
     }
+    fetchCategories();
     fetchProviders();
   }, [filters]);
 
@@ -50,7 +52,7 @@ export const AdminProviders: React.FC = () => {
     try {
       const params = new URLSearchParams();
       if (filters.island) params.append('island', filters.island);
-      if (filters.category) params.append('category', filters.category);
+      if (filters.categoryId) params.append('categoryId', filters.categoryId);
       if (filters.status) params.append('status', filters.status);
 
       const response = await fetch(`${API_BASE}/admin/providers?${params}`, {
@@ -63,6 +65,18 @@ export const AdminProviders: React.FC = () => {
       alert('Error fetching providers');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const fetchCategories = async () => {
+    try {
+      const response = await fetch(`${API_BASE}/categories`);
+      if (response.ok) {
+        const categories = await response.json();
+        setAvailableCategories(categories);
+      }
+    } catch (err) {
+      console.error('Error fetching categories:', err);
     }
   };
 
@@ -123,31 +137,33 @@ export const AdminProviders: React.FC = () => {
       <div className="mb-8">
         <nav className="flex space-x-4">
           <a href="/admin/providers" className="text-blue-600 hover:underline">Providers</a>
+          <a href="/admin/requests" className="text-blue-600 hover:underline">Requests</a>
           <a href="/admin/reports" className="text-blue-600 hover:underline">Reports</a>
           <a href="/admin/settings" className="text-blue-600 hover:underline">Settings</a>
         </nav>
       </div>
 
-      <div className="mb-8 grid grid-cols-1 md:grid-cols-3 gap-4">
+      <div className="mb-8 grid grid-cols-1 md:grid-cols-4 gap-4">
         <select
           value={filters.island}
           onChange={(e) => handleFilterChange('island', e.target.value)}
           className="border rounded px-3 py-2"
         >
           <option value="">All Islands</option>
-          <option value="St. Thomas">St. Thomas</option>
-          <option value="St. John">St. John</option>
-          <option value="St. Croix">St. Croix</option>
+          <option value="STT">St. Thomas</option>
+          <option value="STJ">St. John</option>
+          <option value="STX">St. Croix</option>
         </select>
 
         <select
-          value={filters.category}
-          onChange={(e) => handleFilterChange('category', e.target.value)}
+          value={filters.categoryId}
+          onChange={(e) => handleFilterChange('categoryId', e.target.value)}
           className="border rounded px-3 py-2"
         >
           <option value="">All Categories</option>
-          <option value="Electrician">Electrician</option>
-          <option value="Plumber">Plumber</option>
+          {availableCategories.map(category => (
+            <option key={category.id} value={category.id}>{category.name}</option>
+          ))}
         </select>
 
         <select
@@ -156,11 +172,9 @@ export const AdminProviders: React.FC = () => {
           className="border rounded px-3 py-2"
         >
           <option value="">All Status</option>
-          <option value="TODAY">Today</option>
-          <option value="NEXT_3_DAYS">Next 3 Days</option>
-          <option value="THIS_WEEK">This Week</option>
-          <option value="NEXT_WEEK">Next Week</option>
-          <option value="UNAVAILABLE">Unavailable</option>
+          <option value="OPEN_NOW">Available Now</option>
+          <option value="BUSY_LIMITED">Busy/Limited</option>
+          <option value="NOT_TAKING_WORK">Not Taking Work</option>
         </select>
       </div>
 
