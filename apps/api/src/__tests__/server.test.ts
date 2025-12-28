@@ -531,7 +531,11 @@ describe('POST /providers', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     (mockPool.connect as jest.Mock).mockResolvedValue(mockClient);
-    (mockClient.query as jest.Mock).mockResolvedValue({ rows: [{ id: 1 }] });
+    (mockClient.query as jest.Mock).mockResolvedValueOnce({ rows: [{ id: 1 }] }); // INSERT INTO providers
+    (mockClient.query as jest.Mock).mockResolvedValueOnce({ rows: [{ id: 1 }] }); // SELECT id FROM categories
+    (mockClient.query as jest.Mock).mockResolvedValue({ rows: [] }); // Other queries
+    // Mock pool.query for verification and activity logging - always return empty results
+    (mockPool.query as jest.Mock).mockImplementation(() => Promise.resolve({ rows: [] }));
   });
 
   it('should create provider with island selection', async () => {
@@ -551,6 +555,11 @@ describe('POST /providers', () => {
 
     expect(response.status).toBe(201);
     expect(response.body.id).toBe(1);
+    expect(response.body.name).toBe('Test Provider');
+    expect(response.body.token).toMatch(/^provider_1_\d+$/);
+    expect(response.body.plan).toBe('PREMIUM');
+    expect(response.body.plan_source).toBe('TRIAL');
+    expect(response.body.trial_days_left).toBeGreaterThan(25); // Should be around 30 days
     expect(mockClient.query).toHaveBeenCalledWith(
       expect.stringContaining('INSERT INTO providers'),
       expect.arrayContaining([
@@ -653,6 +662,8 @@ describe('POST /providers trial functionality', () => {
     expect(response.status).toBe(201);
     expect(response.body).toEqual({
       id: 1,
+      name: 'Test Provider',
+      token: expect.stringMatching(/^provider_1_\d+$/),
       plan: 'PREMIUM',
       plan_source: 'TRIAL',
       trial_end_at: expect.any(String),

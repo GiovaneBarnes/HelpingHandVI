@@ -12,6 +12,8 @@ interface Category {
 
 interface ProviderResponse {
   id: number;
+  name: string;
+  token: string;
   plan: string;
   plan_source: string;
   trial_end_at: string;
@@ -85,7 +87,9 @@ export const Join: React.FC = () => {
         return response.json() as Promise<ProviderResponse>;
       })
       .then(data => {
-        navigate(`/dashboard/${data.id}?token=placeholder`);
+        // Auto-login after successful signup
+        localStorage.setItem('provider_token', data.token);
+        navigate('/provider/dashboard');
       })
       .catch(() => {
         alert('Error creating provider');

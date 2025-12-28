@@ -3,6 +3,14 @@ import { vi } from 'vitest';
 import { MemoryRouter } from 'react-router-dom';
 import { Join } from './Join';
 
+// Mock localStorage
+const localStorageMock = {
+  getItem: vi.fn(),
+  setItem: vi.fn(),
+  removeItem: vi.fn(),
+};
+Object.defineProperty(window, 'localStorage', { value: localStorageMock });
+
 // Mock fetch globally
 const mockFetch = vi.fn();
 global.fetch = mockFetch;
@@ -21,6 +29,7 @@ describe('Join', () => {
   beforeEach(() => {
     mockFetch.mockClear();
     mockNavigate.mockClear();
+    localStorageMock.setItem.mockClear();
     mockFetch.mockImplementation((url: string) => {
       if (url.includes('/categories')) {
         return Promise.resolve({
@@ -35,7 +44,15 @@ describe('Join', () => {
       if (url.includes('/providers')) {
         return Promise.resolve({
           ok: true,
-          json: () => Promise.resolve({ id: 123, token: 'abc123' })
+          json: () => Promise.resolve({ 
+            id: 123, 
+            name: 'John Doe',
+            token: 'provider_123_1234567890',
+            plan: 'PREMIUM',
+            plan_source: 'TRIAL',
+            trial_end_at: '2025-01-28T00:00:00.000Z',
+            trial_days_left: 30
+          })
         });
       }
       return Promise.reject(new Error('Unexpected URL'));
@@ -139,7 +156,8 @@ describe('Join', () => {
     fireEvent.click(submitButton);
 
     await waitFor(() => {
-      expect(mockNavigate).toHaveBeenCalledWith('/dashboard/123?token=placeholder');
+      expect(localStorage.setItem).toHaveBeenCalledWith('provider_token', 'provider_123_1234567890');
+      expect(mockNavigate).toHaveBeenCalledWith('/provider/dashboard');
     });
   });
 

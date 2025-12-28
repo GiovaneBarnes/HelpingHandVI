@@ -91,9 +91,9 @@ class VerificationService {
           p.profile->>'description' as description,
           (SELECT COUNT(*) FROM provider_categories WHERE provider_id = p.id) as category_count,
           (SELECT COUNT(*) FROM provider_areas WHERE provider_id = p.id) as area_count,
-          (SELECT COUNT(DISTINCT DATE(created_at)) FROM activity_events WHERE provider_id = p.id AND type IN ('PROFILE_VIEW', 'STATUS_UPDATE', 'LOGIN')) as active_days,
-          (SELECT COUNT(*) FROM activity_events WHERE provider_id = p.id AND type IN ('CUSTOMER_CALL', 'CUSTOMER_SMS', 'CUSTOMER_WHATSAPP')) as customer_interactions,
-          (SELECT COUNT(*) FROM activity_events WHERE provider_id = p.id AND type = 'STATUS_OPEN_FOR_WORK') as open_for_work_count
+          (SELECT COUNT(DISTINCT DATE(created_at)) FROM activity_events WHERE provider_id = p.id AND event_type IN ('PROFILE_VIEW', 'STATUS_UPDATE', 'LOGIN')) as active_days,
+          (SELECT COUNT(*) FROM activity_events WHERE provider_id = p.id AND event_type IN ('CUSTOMER_CALL', 'CUSTOMER_SMS', 'CUSTOMER_WHATSAPP')) as customer_interactions,
+          (SELECT COUNT(*) FROM activity_events WHERE provider_id = p.id AND event_type = 'STATUS_OPEN_FOR_WORK') as open_for_work_count
         FROM providers p 
         WHERE p.id = $1
       `, [providerId]);
@@ -253,8 +253,155 @@ app.use(cors({
 
 app.use(express.json());
 
-app.get('/health', (req: Request, res: Response) => {
-  res.json({ ok: true });
+app.get('/health', async (req, res) => {
+  const checks = {
+    database: { status: 'unknown', details: null as any },
+    providers: { status: 'unknown', details: null as any },
+    reports: { status: 'unknown', details: null as any },
+    activity: { status: 'unknown', details: null as any },
+    system: { status: 'unknown', details: null as any }
+  };
+
+  let overallStatus = 'healthy';
+
+  try {
+    // Database connectivity check
+    const dbStart = Date.now();
+    await pool.query('SELECT 1');
+    const dbLatency = Date.now() - dbStart;
+    checks.database = {
+      status: 'healthy',
+      details: { latency_ms: dbLatency, message: 'Database connection successful' }
+    };
+  } catch (error) {
+    checks.database = {
+      status: 'unhealthy',
+      details: { error: error instanceof Error ? error.message : 'Database connection failed' }
+    };
+    overallStatus = 'unhealthy';
+  }
+
+  try {
+    // Providers table integrity check
+    const providerResult = await pool.query(`
+      SELECT
+        COUNT(*) as total_providers,
+        COUNT(CASE WHEN lifecycle_status = 'ACTIVE' THEN 1 END) as active_providers,
+        COUNT(CASE WHEN lifecycle_status = 'ARCHIVED' THEN 1 END) as archived_providers,
+        COUNT(CASE WHEN is_disputed = true THEN 1 END) as disputed_providers,
+        COUNT(CASE WHEN plan = 'PREMIUM' AND (plan_source != 'TRIAL' OR trial_end_at > NOW()) THEN 1 END) as premium_providers
+      FROM providers
+    `);
+
+    const providerStats = providerResult.rows[0];
+    checks.providers = {
+      status: 'healthy',
+      details: {
+        total: parseInt(providerStats.total_providers),
+        active: parseInt(providerStats.active_providers),
+        archived: parseInt(providerStats.archived_providers),
+        disputed: parseInt(providerStats.disputed_providers),
+        premium: parseInt(providerStats.premium_providers)
+      }
+    };
+  } catch (error) {
+    checks.providers = {
+      status: 'unhealthy',
+      details: { error: error instanceof Error ? error.message : 'Failed to query providers' }
+    };
+    overallStatus = 'unhealthy';
+  }
+
+  try {
+    // Reports system check
+    const reportResult = await pool.query(`
+      SELECT
+        COUNT(*) as total_reports,
+        COUNT(CASE WHEN created_at > NOW() - INTERVAL '24 hours' THEN 1 END) as reports_last_24h
+      FROM reports
+    `);
+
+    const reportStats = reportResult.rows[0];
+    checks.reports = {
+      status: 'healthy',
+      details: {
+        total: parseInt(reportStats.total_reports),
+        last_24h: parseInt(reportStats.reports_last_24h),
+        note: 'Status tracking not yet implemented'
+      }
+    };
+  } catch (error) {
+    checks.reports = {
+      status: 'unhealthy',
+      details: { error: error instanceof Error ? error.message : 'Failed to query reports' }
+    };
+    overallStatus = 'unhealthy';
+  }
+
+  try {
+    // Activity system check
+    const activityResult = await pool.query(`
+      SELECT
+        COUNT(*) as total_events,
+        COUNT(CASE WHEN created_at > NOW() - INTERVAL '24 hours' THEN 1 END) as events_last_24h,
+        COUNT(DISTINCT provider_id) as active_providers_24h
+      FROM activity_events
+      WHERE created_at > NOW() - INTERVAL '7 days'
+    `);
+
+    const activityStats = activityResult.rows[0];
+    checks.activity = {
+      status: 'healthy',
+      details: {
+        total_recent_events: parseInt(activityStats.total_events),
+        events_last_24h: parseInt(activityStats.events_last_24h),
+        active_providers_24h: parseInt(activityStats.active_providers_24h)
+      }
+    };
+  } catch (error) {
+    checks.activity = {
+      status: 'unhealthy',
+      details: { error: error instanceof Error ? error.message : 'Failed to query activity events' }
+    };
+    overallStatus = 'unhealthy';
+  }
+
+  try {
+    // System metrics check
+    const systemResult = await pool.query(`
+      SELECT
+        (SELECT COUNT(*) FROM categories) as categories_count,
+        (SELECT COUNT(*) FROM areas) as areas_count,
+        (SELECT COUNT(*) FROM provider_categories) as provider_categories_count,
+        (SELECT COUNT(*) FROM provider_areas) as provider_areas_count,
+        (SELECT COUNT(*) FROM provider_badges) as badges_count
+    `);
+
+    const systemStats = systemResult.rows[0];
+    checks.system = {
+      status: 'healthy',
+      details: {
+        categories: parseInt(systemStats.categories_count),
+        areas: parseInt(systemStats.areas_count),
+        provider_categories: parseInt(systemStats.provider_categories_count),
+        provider_areas: parseInt(systemStats.provider_areas_count),
+        badges: parseInt(systemStats.badges_count)
+      }
+    };
+  } catch (error) {
+    checks.system = {
+      status: 'unhealthy',
+      details: { error: error instanceof Error ? error.message : 'Failed to query system metrics' }
+    };
+    overallStatus = 'unhealthy';
+  }
+
+  res.json({
+    status: overallStatus,
+    timestamp: new Date().toISOString(),
+    checks,
+    version: process.env.npm_package_version || '1.0.0'
+  });
 });
 
 app.get('/areas', async (req: Request, res: Response) => {
@@ -636,8 +783,13 @@ app.post('/providers', async (req, res) => {
       // Calculate trial days left
       const trialDaysLeft = Math.max(0, Math.ceil((trialEnd.getTime() - Date.now()) / (1000 * 60 * 60 * 24)));
 
+      // Log the signup/login activity
+      await ActivityService.logEvent(providerId, 'LOGIN');
+
       res.status(201).json({
         id: providerId,
+        name: name,
+        token: `provider_${providerId}_${Date.now()}`,
         plan: 'PREMIUM',
         plan_source: 'TRIAL',
         trial_end_at: trialEnd.toISOString(),
@@ -1375,6 +1527,182 @@ app.patch('/admin/settings/emergency-mode', adminAuth, async (req, res) => {
   } catch (error) {
     console.error(error);
     res.status(500).json({ data: null, error: 'Internal server error' });
+  }
+});
+
+// Change Requests Endpoints
+
+// Submit change request (for providers)
+app.post('/providers/:id/change-requests', async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const { field, requested_value, reason } = req.body;
+
+    if (!field || !requested_value || !reason) {
+      return res.status(400).json({ error: 'Missing required fields: field, requested_value, reason' });
+    }
+
+    if (!['name', 'island'].includes(field)) {
+      return res.status(400).json({ error: 'Field must be either "name" or "island"' });
+    }
+
+    // Get current value for the field
+    const providerResult = await pool.query('SELECT name, island FROM providers WHERE id = $1', [id]);
+    if (providerResult.rows.length === 0) {
+      return res.status(404).json({ error: 'Provider not found' });
+    }
+
+    const provider = providerResult.rows[0];
+    const currentValue = field === 'name' ? provider.name : provider.island;
+
+    // Check if there's already a pending request for this field
+    const existingRequest = await pool.query(
+      'SELECT id FROM change_requests WHERE provider_id = $1 AND field = $2 AND status = $3',
+      [id, field, 'pending']
+    );
+
+    if (existingRequest.rows.length > 0) {
+      return res.status(409).json({ error: 'A pending change request already exists for this field' });
+    }
+
+    // Create the change request
+    const result = await pool.query(`
+      INSERT INTO change_requests (provider_id, field, current_value, requested_value, reason)
+      VALUES ($1, $2, $3, $4, $5)
+      RETURNING id, created_at
+    `, [id, field, currentValue, requested_value, reason]);
+
+    res.json({
+      success: true,
+      request_id: result.rows[0].id,
+      message: 'Change request submitted successfully'
+    });
+  } catch (error) {
+    console.error('Error creating change request:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Get change requests (admin only)
+app.get('/admin/change-requests', adminAuth, async (req: Request, res: Response) => {
+  try {
+    const { status, limit = 50, offset = 0 } = req.query;
+
+    let whereClause = '';
+    let params: any[] = [];
+    let paramIndex = 1;
+
+    if (status && ['pending', 'approved', 'rejected'].includes(status as string)) {
+      whereClause = `WHERE cr.status = $${paramIndex}`;
+      params.push(status);
+      paramIndex++;
+    }
+
+    const result = await pool.query(`
+      SELECT
+        cr.id,
+        cr.provider_id,
+        p.name as provider_name,
+        cr.field,
+        cr.current_value,
+        cr.requested_value,
+        cr.reason,
+        cr.status,
+        cr.created_at,
+        cr.reviewed_at,
+        cr.reviewed_by,
+        cr.admin_notes
+      FROM change_requests cr
+      JOIN providers p ON cr.provider_id = p.id
+      ${whereClause}
+      ORDER BY cr.created_at DESC
+      LIMIT $${paramIndex} OFFSET $${paramIndex + 1}
+    `, [...params, limit, offset]);
+
+    // Get total count for pagination
+    const countResult = await pool.query(`
+      SELECT COUNT(*) as total FROM change_requests cr ${whereClause ? whereClause.replace('cr.', '') : ''}
+    `, params);
+
+    res.json({
+      requests: result.rows,
+      total: parseInt(countResult.rows[0].total),
+      limit: parseInt(limit as string),
+      offset: parseInt(offset as string)
+    });
+  } catch (error) {
+    console.error('Error fetching change requests:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Approve or reject change request (admin only)
+app.patch('/admin/change-requests/:id', adminAuth, async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const { action, admin_notes } = req.body;
+
+    if (!['approve', 'reject'].includes(action)) {
+      return res.status(400).json({ error: 'Action must be either "approve" or "reject"' });
+    }
+
+    // Get the change request
+    const requestResult = await pool.query(
+      'SELECT * FROM change_requests WHERE id = $1',
+      [id]
+    );
+
+    if (requestResult.rows.length === 0) {
+      return res.status(404).json({ error: 'Change request not found' });
+    }
+
+    const changeRequest = requestResult.rows[0];
+
+    if (changeRequest.status !== 'pending') {
+      return res.status(400).json({ error: 'Change request has already been reviewed' });
+    }
+
+    const newStatus = action === 'approve' ? 'approved' : 'rejected';
+
+    // Update the change request
+    await pool.query(`
+      UPDATE change_requests
+      SET status = $1, reviewed_at = CURRENT_TIMESTAMP, reviewed_by = $2, admin_notes = $3
+      WHERE id = $4
+    `, [newStatus, req.adminActor, admin_notes || null, id]);
+
+    // If approved, update the provider record
+    if (action === 'approve') {
+      const fieldName = changeRequest.field === 'name' ? 'name' : 'island';
+      await pool.query(
+        `UPDATE providers SET ${fieldName} = $1, last_updated_at = CURRENT_TIMESTAMP WHERE id = $2`,
+        [changeRequest.requested_value, changeRequest.provider_id]
+      );
+
+      // Log audit event
+      await AuditService.log({
+        actionType: changeRequest.field === 'name' ? 'NAME_CHANGED' : 'ISLAND_CHANGED',
+        adminActor: req.adminActor!,
+        providerId: changeRequest.provider_id,
+        notes: `Approved change request: ${changeRequest.field} from "${changeRequest.current_value}" to "${changeRequest.requested_value}"`
+      });
+    } else {
+      // Log audit event for rejection
+      await AuditService.log({
+        actionType: 'CHANGE_REQUEST_REJECTED',
+        adminActor: req.adminActor!,
+        providerId: changeRequest.provider_id,
+        notes: `Rejected change request: ${changeRequest.field} from "${changeRequest.current_value}" to "${changeRequest.requested_value}". Reason: ${admin_notes || 'No reason provided'}`
+      });
+    }
+
+    res.json({
+      success: true,
+      message: `Change request ${action}d successfully`
+    });
+  } catch (error) {
+    console.error('Error updating change request:', error);
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 

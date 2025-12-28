@@ -61,20 +61,30 @@ const ResetPassword: React.FC = () => {
 
   if (!token) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50">
-        <div className="max-w-md w-full space-y-8">
-          <div className="text-center">
-            <h2 className="text-3xl font-extrabold text-gray-900">Invalid Reset Link</h2>
-            <p className="mt-2 text-sm text-gray-600">
-              This password reset link is invalid or has expired.
-            </p>
-            <div className="mt-6">
-              <a
-                href="/provider/forgot-password"
-                className="font-medium text-indigo-600 hover:text-indigo-500"
-              >
-                Request a new password reset
-              </a>
+      <div className="min-h-screen bg-gray-50">
+        {/* Purple Header */}
+        <div className="bg-purple-600 text-white py-8">
+          <div className="max-w-md mx-auto text-center">
+            <h1 className="text-2xl font-bold">HelpingHand</h1>
+            <p className="text-purple-100 mt-2">Provider Portal</p>
+          </div>
+        </div>
+        
+        <div className="flex items-center justify-center -mt-6">
+          <div className="max-w-md w-full bg-white rounded-lg shadow-lg p-8">
+            <div className="text-center">
+              <h2 className="text-3xl font-extrabold text-gray-900">Invalid Reset Link</h2>
+              <p className="mt-2 text-sm text-gray-600">
+                This password reset link is invalid or has expired.
+              </p>
+              <div className="mt-6">
+                <a
+                  href="/provider/forgot-password"
+                  className="font-medium text-indigo-600 hover:text-indigo-500"
+                >
+                  Request a new password reset
+                </a>
+              </div>
             </div>
           </div>
         </div>
@@ -83,16 +93,25 @@ const ResetPassword: React.FC = () => {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-50">
-      <div className="max-w-md w-full space-y-8">
-        <div>
-          <h2 className="mt-6 text-center text-3xl font-extrabold text-gray-900">
-            Set new password
-          </h2>
-          <p className="mt-2 text-center text-sm text-gray-600">
-            Enter your new password below.
-          </p>
+    <div className="min-h-screen bg-gray-50">
+      {/* Purple Header */}
+      <div className="bg-purple-600 text-white py-8">
+        <div className="max-w-md mx-auto text-center">
+          <h1 className="text-2xl font-bold">HelpingHand</h1>
+          <p className="text-purple-100 mt-2">Provider Portal</p>
         </div>
+      </div>
+      
+      <div className="flex items-center justify-center -mt-6">
+        <div className="max-w-md w-full bg-white rounded-lg shadow-lg p-8">
+          <div>
+            <h2 className="text-center text-3xl font-extrabold text-gray-900">
+              Set new password
+            </h2>
+            <p className="mt-2 text-center text-sm text-gray-600">
+              Enter your new password below.
+            </p>
+          </div>
         <form className="mt-8 space-y-6" onSubmit={handleSubmit}>
           <div>
             <label htmlFor="password" className="sr-only">New Password</label>

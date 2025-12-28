@@ -34,16 +34,25 @@ const ForgotPassword: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-50">
-      <div className="max-w-md w-full space-y-8">
-        <div>
-          <h2 className="mt-6 text-center text-3xl font-extrabold text-gray-900">
-            Reset your password
-          </h2>
-          <p className="mt-2 text-center text-sm text-gray-600">
-            Enter your email address and we'll send you a link to reset your password.
-          </p>
+    <div className="min-h-screen bg-gray-50">
+      {/* Purple Header */}
+      <div className="bg-purple-600 text-white py-8">
+        <div className="max-w-md mx-auto text-center">
+          <h1 className="text-2xl font-bold">HelpingHand</h1>
+          <p className="text-purple-100 mt-2">Provider Portal</p>
         </div>
+      </div>
+      
+      <div className="flex items-center justify-center -mt-6">
+        <div className="max-w-md w-full bg-white rounded-lg shadow-lg p-8">
+          <div>
+            <h2 className="text-center text-3xl font-extrabold text-gray-900">
+              Reset your password
+            </h2>
+            <p className="mt-2 text-center text-sm text-gray-600">
+              Enter your email address and we'll send you a link to reset your password.
+            </p>
+          </div>
         <form className="mt-8 space-y-6" onSubmit={handleSubmit}>
           <div>
             <label htmlFor="email" className="sr-only">Email address</label>
