@@ -8,6 +8,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Category Management**: Updated provider service categories for better organization
+  - Removed "Test Category" from the category list
+  - Added three new categories: "Music", "Technology", and "Fitness"
+  - Updated database seeds to reflect current category offerings
+  - Maintained alphabetical ordering for improved user experience
+
+### Security
+- **README Security Cleanup**: Removed sensitive configuration data for launch readiness
+  - Replaced actual admin credentials with secure placeholder values
+  - Removed specific Firebase project configuration details
+  - Sanitized API documentation to prevent credential exposure
+  - Maintained setup instructions while protecting sensitive information
+
+### Added
 - **Premium Trial System**: Complete subscription system with automatic 30-day trials
   - Automatic 30-day PREMIUM trials for all new providers (no payment processing)
   - Premium ranking boost (+50 points) for active premium providers

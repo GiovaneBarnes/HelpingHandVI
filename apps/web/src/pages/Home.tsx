@@ -20,6 +20,7 @@ interface Provider {
   is_premium_active: boolean;
   is_trial: boolean;
   categories: string[];
+  badges: string[];
 }
 
 type Filters = {
@@ -345,6 +346,13 @@ export const Home: React.FC = () => {
             <Badge label={provider.status} variant={getAvailabilityColor(provider.status)} className="mb-2" />
             {provider.is_premium_active && (
               <Badge label={provider.is_trial ? "Trial" : "Premium"} variant="success" className="mb-2 ml-2" />
+            )}
+            {provider.badges && provider.badges.length > 0 && (
+              <div className="flex flex-wrap gap-1 mb-2">
+                {provider.badges.map(badge => (
+                  <Badge key={badge} label={badge} variant="success" />
+                ))}
+              </div>
             )}
             <p className="text-sm text-gray-500 mb-4">
               Activity: {provider.last_active_at ? getHoursAgo(provider.last_active_at) : 'Never'}

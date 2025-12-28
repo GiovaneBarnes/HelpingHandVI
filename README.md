@@ -119,8 +119,8 @@ helpinghand/
    Create `.env` file in `apps/api/`:
    ```env
    DATABASE_URL=postgresql://postgres:password@localhost:5432/virgin_islands_providers
-   ADMIN_PASSWORD=admin123
-   ADMIN_KEY=admin-secret
+   ADMIN_PASSWORD=your-secure-admin-password
+   ADMIN_KEY=your-secure-admin-key
    PORT=3000
    ```
 
@@ -142,13 +142,13 @@ helpinghand/
       - In Firebase Console, go to Project Settings > General
       - Scroll to "Your apps" and click "Add app" > Web app
       - Copy the Firebase config object
-      - Update `.env` in the root directory with real values:
+      - Update `.env` in the root directory with your Firebase values:
       ```env
       VITE_USE_FIREBASE_AUTH=true
-      VITE_FIREBASE_API_KEY=your-api-key
-      VITE_FIREBASE_AUTH_DOMAIN=helpinghandvi.firebaseapp.com
-      VITE_FIREBASE_PROJECT_ID=helpinghandvi
-      VITE_FIREBASE_STORAGE_BUCKET=helpinghandvi.appspot.com
+      VITE_FIREBASE_API_KEY=your-firebase-api-key
+      VITE_FIREBASE_AUTH_DOMAIN=your-project.firebaseapp.com
+      VITE_FIREBASE_PROJECT_ID=your-project-id
+      VITE_FIREBASE_STORAGE_BUCKET=your-project.appspot.com
       VITE_FIREBASE_MESSAGING_SENDER_ID=your-sender-id
       VITE_FIREBASE_APP_ID=your-app-id
       ```
@@ -221,8 +221,8 @@ helpinghand/
 - `PUT /providers/:id/status` - Update availability status
 
 ### Admin Endpoints (require X-Admin-Key header)
-- Authentication: Admin login uses local password validation (password: `admin123`)
-- API calls require `X-ADMIN-KEY: admin-secret` header for backend authentication
+- Authentication: Admin login uses local password validation
+- API calls require `X-ADMIN-KEY` header for backend authentication
 - `GET /admin/providers` - List all providers
 - `PUT /admin/providers/:id/verify` - Verify provider
 - `PUT /admin/providers/:id/archive` - Archive/unarchive provider (toggle)
@@ -253,8 +253,7 @@ helpinghand/
 
 ### For Administrators
 1. Access `/admin` and login with admin credentials
-2. Use password: `admin123` (configured in environment variables)
-3. Review provider listings and verify legitimate businesses
+2. Review provider listings and verify legitimate businesses
 4. Mark/unmark providers as disputed for admin-only visibility
 5. Triage user reports with NEW/IN_REVIEW/RESOLVED status workflow
 6. Toggle emergency mode to boost trusted provider rankings and show public banner

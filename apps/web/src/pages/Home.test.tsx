@@ -807,4 +807,331 @@ describe('Home', () => {
       expect(screen.getByText('Jane Smith')).toBeInTheDocument();
     });
   });
+
+  describe('Badge Display', () => {
+    it('displays VERIFIED badge for verified providers', async () => {
+      fetchMock.mockImplementation((url: string) => {
+        if (url.includes('/settings/emergency-mode')) {
+          return Promise.resolve({
+            ok: true,
+            json: () => Promise.resolve({ enabled: false })
+          });
+        } else if (url.includes('/providers')) {
+          return Promise.resolve({
+            ok: true,
+            json: () => Promise.resolve({
+              data: {
+                providers: [
+                  {
+                    id: 1,
+                    name: 'Verified Provider',
+                    phone: '123-456-7890',
+                    island: 'STT',
+                    status: 'OPEN_NOW',
+                    last_active_at: new Date().toISOString(),
+                    lifecycle_status: 'ACTIVE',
+                    is_premium_active: false,
+                    is_trial: false,
+                    badges: ['VERIFIED'],
+                    profile: {}
+                  }
+                ],
+                nextCursor: null,
+                hasMore: false,
+                suggestions: []
+              }
+            })
+          });
+        }
+        return Promise.reject(new Error('Unexpected URL'));
+      });
+
+      renderHome();
+
+      await waitFor(() => {
+        expect(screen.getByText('Verified Provider')).toBeInTheDocument();
+        expect(screen.getByText('VERIFIED')).toBeInTheDocument();
+      });
+    });
+
+    it('displays GOV_APPROVED badge for government approved providers', async () => {
+      fetchMock.mockImplementation((url: string) => {
+        if (url.includes('/settings/emergency-mode')) {
+          return Promise.resolve({
+            ok: true,
+            json: () => Promise.resolve({ enabled: false })
+          });
+        } else if (url.includes('/providers')) {
+          return Promise.resolve({
+            ok: true,
+            json: () => Promise.resolve({
+              data: {
+                providers: [
+                  {
+                    id: 1,
+                    name: 'Gov Approved Provider',
+                    phone: '123-456-7890',
+                    island: 'STT',
+                    status: 'OPEN_NOW',
+                    last_active_at: new Date().toISOString(),
+                    lifecycle_status: 'ACTIVE',
+                    is_premium_active: false,
+                    is_trial: false,
+                    badges: ['GOV_APPROVED'],
+                    profile: {}
+                  }
+                ],
+                nextCursor: null,
+                hasMore: false,
+                suggestions: []
+              }
+            })
+          });
+        }
+        return Promise.reject(new Error('Unexpected URL'));
+      });
+
+      renderHome();
+
+      await waitFor(() => {
+        expect(screen.getByText('Gov Approved Provider')).toBeInTheDocument();
+        expect(screen.getByText('GOV_APPROVED')).toBeInTheDocument();
+      });
+    });
+
+    it('displays multiple badges for providers with multiple badges', async () => {
+      fetchMock.mockImplementation((url: string) => {
+        if (url.includes('/settings/emergency-mode')) {
+          return Promise.resolve({
+            ok: true,
+            json: () => Promise.resolve({ enabled: false })
+          });
+        } else if (url.includes('/providers')) {
+          return Promise.resolve({
+            ok: true,
+            json: () => Promise.resolve({
+              data: {
+                providers: [
+                  {
+                    id: 1,
+                    name: 'Fully Verified Provider',
+                    phone: '123-456-7890',
+                    island: 'STT',
+                    status: 'OPEN_NOW',
+                    last_active_at: new Date().toISOString(),
+                    lifecycle_status: 'ACTIVE',
+                    is_premium_active: true,
+                    is_trial: false,
+                    badges: ['VERIFIED', 'GOV_APPROVED', 'EMERGENCY_READY'],
+                    profile: {}
+                  }
+                ],
+                nextCursor: null,
+                hasMore: false,
+                suggestions: []
+              }
+            })
+          });
+        }
+        return Promise.reject(new Error('Unexpected URL'));
+      });
+
+      renderHome();
+
+      await waitFor(() => {
+        expect(screen.getByText('Fully Verified Provider')).toBeInTheDocument();
+        expect(screen.getByText('VERIFIED')).toBeInTheDocument();
+        expect(screen.getByText('GOV_APPROVED')).toBeInTheDocument();
+        expect(screen.getByText('EMERGENCY_READY')).toBeInTheDocument();
+      });
+    });
+
+    it('displays EMERGENCY_READY badge for emergency eligible providers', async () => {
+      fetchMock.mockImplementation((url: string) => {
+        if (url.includes('/settings/emergency-mode')) {
+          return Promise.resolve({
+            ok: true,
+            json: () => Promise.resolve({ enabled: false })
+          });
+        } else if (url.includes('/providers')) {
+          return Promise.resolve({
+            ok: true,
+            json: () => Promise.resolve({
+              data: {
+                providers: [
+                  {
+                    id: 1,
+                    name: 'Emergency Ready Provider',
+                    phone: '123-456-7890',
+                    island: 'STT',
+                    status: 'OPEN_NOW',
+                    last_active_at: new Date().toISOString(),
+                    lifecycle_status: 'ACTIVE',
+                    is_premium_active: false,
+                    is_trial: false,
+                    badges: ['EMERGENCY_READY'],
+                    emergency_boost_eligible: 1,
+                    profile: {}
+                  }
+                ],
+                nextCursor: null,
+                hasMore: false,
+                suggestions: []
+              }
+            })
+          });
+        }
+        return Promise.reject(new Error('Unexpected URL'));
+      });
+
+      renderHome();
+
+      await waitFor(() => {
+        expect(screen.getByText('Emergency Ready Provider')).toBeInTheDocument();
+        expect(screen.getByText('EMERGENCY_READY')).toBeInTheDocument();
+      });
+    });
+
+    it('does not display badges for providers without badges', async () => {
+      fetchMock.mockImplementation((url: string) => {
+        if (url.includes('/settings/emergency-mode')) {
+          return Promise.resolve({
+            ok: true,
+            json: () => Promise.resolve({ enabled: false })
+          });
+        } else if (url.includes('/providers')) {
+          return Promise.resolve({
+            ok: true,
+            json: () => Promise.resolve({
+              data: {
+                providers: [
+                  {
+                    id: 1,
+                    name: 'Regular Provider',
+                    phone: '123-456-7890',
+                    island: 'STT',
+                    status: 'OPEN_NOW',
+                    last_active_at: new Date().toISOString(),
+                    lifecycle_status: 'ACTIVE',
+                    is_premium_active: false,
+                    is_trial: false,
+                    badges: [],
+                    profile: {}
+                  }
+                ],
+                nextCursor: null,
+                hasMore: false,
+                suggestions: []
+              }
+            })
+          });
+        }
+        return Promise.reject(new Error('Unexpected URL'));
+      });
+
+      renderHome();
+
+      await waitFor(() => {
+        expect(screen.getByText('Regular Provider')).toBeInTheDocument();
+        // Should not have any badge text
+        expect(screen.queryByText('VERIFIED')).not.toBeInTheDocument();
+        expect(screen.queryByText('GOV APPROVED')).not.toBeInTheDocument();
+        expect(screen.queryByText('EMERGENCY READY')).not.toBeInTheDocument();
+      });
+    });
+
+    it('handles providers with empty badges array', async () => {
+      fetchMock.mockImplementation((url: string) => {
+        if (url.includes('/settings/emergency-mode')) {
+          return Promise.resolve({
+            ok: true,
+            json: () => Promise.resolve({ enabled: false })
+          });
+        } else if (url.includes('/providers')) {
+          return Promise.resolve({
+            ok: true,
+            json: () => Promise.resolve({
+              data: {
+                providers: [
+                  {
+                    id: 1,
+                    name: 'Provider Without Badges',
+                    phone: '123-456-7890',
+                    island: 'STT',
+                    status: 'OPEN_NOW',
+                    last_active_at: new Date().toISOString(),
+                    lifecycle_status: 'ACTIVE',
+                    is_premium_active: false,
+                    is_trial: false,
+                    badges: null, // Test null badges
+                    profile: {}
+                  }
+                ],
+                nextCursor: null,
+                hasMore: false,
+                suggestions: []
+              }
+            })
+          });
+        }
+        return Promise.reject(new Error('Unexpected URL'));
+      });
+
+      renderHome();
+
+      await waitFor(() => {
+        expect(screen.getByText('Provider Without Badges')).toBeInTheDocument();
+        // Should not crash and not display badges
+        expect(screen.queryByText('VERIFIED')).not.toBeInTheDocument();
+      });
+    });
+
+    it('displays badges alongside premium and trial badges', async () => {
+      fetchMock.mockImplementation((url: string) => {
+        if (url.includes('/settings/emergency-mode')) {
+          return Promise.resolve({
+            ok: true,
+            json: () => Promise.resolve({ enabled: false })
+          });
+        } else if (url.includes('/providers')) {
+          return Promise.resolve({
+            ok: true,
+            json: () => Promise.resolve({
+              data: {
+                providers: [
+                  {
+                    id: 1,
+                    name: 'Premium Verified Provider',
+                    phone: '123-456-7890',
+                    island: 'STT',
+                    status: 'OPEN_NOW',
+                    last_active_at: new Date().toISOString(),
+                    lifecycle_status: 'ACTIVE',
+                    is_premium_active: true,
+                    is_trial: true,
+                    badges: ['VERIFIED', 'GOV_APPROVED'],
+                    profile: {}
+                  }
+                ],
+                nextCursor: null,
+                hasMore: false,
+                suggestions: []
+              }
+            })
+          });
+        }
+        return Promise.reject(new Error('Unexpected URL'));
+      });
+
+      renderHome();
+
+      await waitFor(() => {
+        expect(screen.getByText('Premium Verified Provider')).toBeInTheDocument();
+        // Should show all badges: premium/trial badges + verification badges
+        expect(screen.getByText('Trial')).toBeInTheDocument();
+        expect(screen.getByText('VERIFIED')).toBeInTheDocument();
+        expect(screen.getByText('GOV_APPROVED')).toBeInTheDocument();
+      });
+    });
+  });
 });

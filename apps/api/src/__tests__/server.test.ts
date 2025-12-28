@@ -1837,6 +1837,45 @@ describe('PUT /admin/providers/:id/verify', () => {
   });
 });
 
+describe('PUT /admin/providers/:id/gov-approve', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  it('should approve government credentials for a provider', async () => {
+    (mockPool.query as jest.Mock).mockResolvedValue({});
+
+    const response = await request(app)
+      .put('/admin/providers/1/gov-approve')
+      .set('x-admin-key', 'test-admin-key')
+      .send({ approved: true });
+
+    expect(response.status).toBe(200);
+    expect(response.body.message).toBe('Provider government approval updated');
+  });
+
+  it('should revoke government approval for a provider', async () => {
+    (mockPool.query as jest.Mock).mockResolvedValue({});
+
+    const response = await request(app)
+      .put('/admin/providers/1/gov-approve')
+      .set('x-admin-key', 'test-admin-key')
+      .send({ approved: false });
+
+    expect(response.status).toBe(200);
+    expect(response.body.message).toBe('Provider government approval updated');
+  });
+
+  it('should reject unauthorized requests', async () => {
+    const response = await request(app)
+      .put('/admin/providers/1/gov-approve')
+      .send({ approved: true });
+
+    expect(response.status).toBe(401);
+    expect(response.body.error).toBe('Unauthorized');
+  });
+});
+
 describe('PUT /admin/providers/:id/archive', () => {
   beforeEach(() => {
     jest.clearAllMocks();

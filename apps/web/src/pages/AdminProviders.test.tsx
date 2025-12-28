@@ -238,9 +238,6 @@ describe('AdminProviders', () => {
   });
 
   it('handles verify action', async () => {
-    // Mock prompt
-    global.prompt = vi.fn(() => 'Test notes');
-
     renderAdminProviders();
 
     await waitFor(() => {
@@ -252,10 +249,31 @@ describe('AdminProviders', () => {
 
     await waitFor(() => {
       expect(fetchMock).toHaveBeenCalledWith(
-        'http://localhost:3000/admin/providers/1/verify',
+        'http://localhost:3000/admin/providers/2/verify',
         expect.objectContaining({
           method: 'PUT',
-          body: JSON.stringify({ notes: 'Test notes' }),
+          body: JSON.stringify({ verified: true }),
+        })
+      );
+    });
+  });
+
+  it('handles gov approve action', async () => {
+    renderAdminProviders();
+
+    await waitFor(() => {
+      expect(screen.getAllByText('Gov Approve')[0]).toBeInTheDocument();
+    });
+
+    const govApproveButton = screen.getAllByText('Gov Approve')[0];
+    fireEvent.click(govApproveButton);
+
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledWith(
+        'http://localhost:3000/admin/providers/1/gov-approve',
+        expect.objectContaining({
+          method: 'PUT',
+          body: JSON.stringify({ approved: true }),
         })
       );
     });
@@ -367,23 +385,6 @@ describe('AdminProviders', () => {
     await waitFor(() => {
       expect(global.alert).toHaveBeenCalledWith('Error fetching providers');
     });
-  });
-
-  it('cancels verify when prompt is cancelled', async () => {
-    global.prompt = vi.fn(() => null);
-
-    renderAdminProviders();
-
-    await waitFor(() => {
-      const verifyButton = screen.getAllByText('Verify')[0];
-      fireEvent.click(verifyButton);
-    });
-
-    // Should not make the API call
-    expect(fetchMock).not.toHaveBeenCalledWith(
-      expect.stringContaining('/verify'),
-      expect.any(Object)
-    );
   });
 
   it('cancels disputed action when prompt is cancelled', async () => {

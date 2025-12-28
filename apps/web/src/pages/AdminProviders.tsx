@@ -36,6 +36,10 @@ export const AdminProviders: React.FC = () => {
     island: '',
     categoryId: '',
     status: '',
+    verified: '',
+    govApproved: '',
+    archived: '',
+    disputed: '',
   });
   const [availableCategories, setAvailableCategories] = useState<Array<{ id: number; name: string }>>([]);
 
@@ -46,6 +50,10 @@ export const AdminProviders: React.FC = () => {
       if (filters.island) params.append('island', filters.island);
       if (filters.categoryId) params.append('categoryId', filters.categoryId);
       if (filters.status) params.append('status', filters.status);
+      if (filters.verified) params.append('verified', filters.verified);
+      if (filters.govApproved) params.append('govApproved', filters.govApproved);
+      if (filters.archived) params.append('archived', filters.archived);
+      if (filters.disputed) params.append('disputed', filters.disputed);
 
       const response = await fetch(`${API_BASE}/admin/providers?${params}`, {
         headers: { 'X-ADMIN-KEY': ADMIN_KEY },
@@ -82,30 +90,49 @@ export const AdminProviders: React.FC = () => {
   };
 
   const handleVerify = async (id: number) => {
-    const notes = prompt('Notes:');
-    if (notes !== null) {
-      try {
-        await fetch(`${API_BASE}/admin/providers/${id}/verify`, {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json', 'X-ADMIN-KEY': ADMIN_KEY },
-          body: JSON.stringify({ notes }),
-        });
-        fetchProviders();
-      } catch (err) {
-        alert('Error verifying');
-      }
+    const provider = providers.find(p => p.id === id);
+    const isCurrentlyVerified = provider?.badges?.includes('VERIFIED') || false;
+    const verified = !isCurrentlyVerified;
+
+    try {
+      await fetch(`${API_BASE}/admin/providers/${id}/verify`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', 'X-ADMIN-KEY': ADMIN_KEY },
+        body: JSON.stringify({ verified }),
+      });
+      fetchProviders();
+    } catch (err) {
+      alert('Error verifying');
+    }
+  };
+
+  const handleGovApprove = async (id: number) => {
+    const provider = providers.find(p => p.id === id);
+    const isCurrentlyApproved = provider?.badges?.includes('GOV_APPROVED') || false;
+    const approved = !isCurrentlyApproved;
+
+    try {
+      await fetch(`${API_BASE}/admin/providers/${id}/gov-approve`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', 'X-ADMIN-KEY': ADMIN_KEY },
+        body: JSON.stringify({ approved }),
+      });
+      fetchProviders();
+    } catch (err) {
+      alert('Error updating government approval');
     }
   };
 
   const handleArchive = async (id: number) => {
     try {
-      await fetch(`${API_BASE}/admin/providers/${id}/archive`, {
+      const response = await fetch(`${API_BASE}/admin/providers/${id}/archive`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json', 'X-ADMIN-KEY': ADMIN_KEY },
       });
+      if (!response.ok) throw new Error('Failed to update archive status');
       fetchProviders();
     } catch (err) {
-      alert('Error updating');
+      alert('Error updating archive status');
     }
   };
 
@@ -113,11 +140,12 @@ export const AdminProviders: React.FC = () => {
     const notes = prompt('Notes:');
     if (notes !== null) {
       try {
-        await fetch(`${API_BASE}/admin/providers/${id}/disputed`, {
+        const response = await fetch(`${API_BASE}/admin/providers/${id}/disputed`, {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json', 'X-ADMIN-KEY': ADMIN_KEY },
           body: JSON.stringify({ isDisputed, notes }),
         });
+        if (!response.ok) throw new Error('Failed to update disputed status');
         fetchProviders();
       } catch (err) {
         alert('Error updating disputed status');
@@ -143,52 +171,52 @@ export const AdminProviders: React.FC = () => {
   return (
     <AdminLayout title="Providers">
       {/* Stats Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
-        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 sm:gap-6 mb-6 sm:mb-8">
+        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4 sm:p-6">
           <div className="flex items-center">
             <div className="p-2 bg-blue-100 rounded-lg">
-              <span className="text-2xl">👥</span>
+              <span className="text-xl sm:text-2xl">👥</span>
             </div>
-            <div className="ml-4">
-              <p className="text-sm font-medium text-gray-600">Total Providers</p>
-              <p className="text-2xl font-bold text-gray-900">{providers.length}</p>
+            <div className="ml-3 sm:ml-4">
+              <p className="text-xs sm:text-sm font-medium text-gray-600">Total</p>
+              <p className="text-lg sm:text-2xl font-bold text-gray-900">{providers.length}</p>
             </div>
           </div>
         </div>
-        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
+        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4 sm:p-6">
           <div className="flex items-center">
             <div className="p-2 bg-green-100 rounded-lg">
-              <span className="text-2xl">✅</span>
+              <span className="text-xl sm:text-2xl">✅</span>
             </div>
-            <div className="ml-4">
-              <p className="text-sm font-medium text-gray-600">Active</p>
-              <p className="text-2xl font-bold text-gray-900">
+            <div className="ml-3 sm:ml-4">
+              <p className="text-xs sm:text-sm font-medium text-gray-600">Active</p>
+              <p className="text-lg sm:text-2xl font-bold text-gray-900">
                 {providers.filter(p => !p.archived).length}
               </p>
             </div>
           </div>
         </div>
-        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
+        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4 sm:p-6">
           <div className="flex items-center">
             <div className="p-2 bg-yellow-100 rounded-lg">
-              <span className="text-2xl">⚠️</span>
+              <span className="text-xl sm:text-2xl">⚠️</span>
             </div>
-            <div className="ml-4">
-              <p className="text-sm font-medium text-gray-600">Disputed</p>
-              <p className="text-2xl font-bold text-gray-900">
+            <div className="ml-3 sm:ml-4">
+              <p className="text-xs sm:text-sm font-medium text-gray-600">Disputed</p>
+              <p className="text-lg sm:text-2xl font-bold text-gray-900">
                 {providers.filter(p => p.is_disputed).length}
               </p>
             </div>
           </div>
         </div>
-        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
+        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4 sm:p-6">
           <div className="flex items-center">
             <div className="p-2 bg-gray-100 rounded-lg">
-              <span className="text-2xl">📦</span>
+              <span className="text-xl sm:text-2xl">📦</span>
             </div>
-            <div className="ml-4">
-              <p className="text-sm font-medium text-gray-600">Archived</p>
-              <p className="text-2xl font-bold text-gray-900">
+            <div className="ml-3 sm:ml-4">
+              <p className="text-xs sm:text-sm font-medium text-gray-600">Archived</p>
+              <p className="text-lg sm:text-2xl font-bold text-gray-900">
                 {providers.filter(p => p.archived).length}
               </p>
             </div>
@@ -197,15 +225,15 @@ export const AdminProviders: React.FC = () => {
       </div>
 
       {/* Filters */}
-      <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6 mb-8">
-        <h3 className="text-lg font-medium text-gray-900 mb-4">Filters</h3>
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+      <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4 sm:p-6 mb-6 sm:mb-8">
+        <h3 className="text-base sm:text-lg font-medium text-gray-900 mb-4">Filters</h3>
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">Island</label>
             <select
               value={filters.island}
               onChange={(e) => handleFilterChange('island', e.target.value)}
-              className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
             >
               <option value="">All Islands</option>
               <option value="STT">St. Thomas</option>
@@ -219,7 +247,7 @@ export const AdminProviders: React.FC = () => {
             <select
               value={filters.categoryId}
               onChange={(e) => handleFilterChange('categoryId', e.target.value)}
-              className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
             >
               <option value="">All Categories</option>
               {availableCategories.map(category => (
@@ -233,7 +261,7 @@ export const AdminProviders: React.FC = () => {
             <select
               value={filters.status}
               onChange={(e) => handleFilterChange('status', e.target.value)}
-              className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
             >
               <option value="">All Status</option>
               <option value="OPEN_NOW">Available Now</option>
@@ -242,11 +270,64 @@ export const AdminProviders: React.FC = () => {
             </select>
           </div>
 
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">Verification</label>
+            <select
+              value={filters.verified}
+              onChange={(e) => handleFilterChange('verified', e.target.value)}
+              className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+            >
+              <option value="">All Providers</option>
+              <option value="true">Verified Only</option>
+              <option value="false">Unverified Only</option>
+            </select>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">Gov Approval</label>
+            <select
+              value={filters.govApproved}
+              onChange={(e) => handleFilterChange('govApproved', e.target.value)}
+              className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+            >
+              <option value="">All Providers</option>
+              <option value="true">Gov Approved Only</option>
+              <option value="false">Not Gov Approved</option>
+            </select>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">Archive Status</label>
+            <select
+              value={filters.archived}
+              onChange={(e) => handleFilterChange('archived', e.target.value)}
+              className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+            >
+              <option value="">All Providers</option>
+              <option value="true">Archived Only</option>
+              <option value="false">Active Only</option>
+            </select>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">Dispute Status</label>
+            <select
+              value={filters.disputed}
+              onChange={(e) => handleFilterChange('disputed', e.target.value)}
+              className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+            >
+              <option value="">All Providers</option>
+              <option value="true">Disputed Only</option>
+              <option value="false">Not Disputed</option>
+            </select>
+          </div>
+
           <div className="flex items-end">
             <Button
-              onClick={() => setFilters({ island: '', categoryId: '', status: '' })}
+              onClick={() => setFilters({ island: '', categoryId: '', status: '', verified: '', govApproved: '', archived: '', disputed: '' })}
               variant="secondary"
               className="w-full"
+              size="sm"
             >
               Clear Filters
             </Button>
@@ -254,16 +335,17 @@ export const AdminProviders: React.FC = () => {
         </div>
       </div>
 
-      {/* Providers Table */}
+      {/* Providers List */}
       <div className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
-        <div className="px-6 py-4 border-b border-gray-200">
-          <h3 className="text-lg font-medium text-gray-900">Provider Management</h3>
-          <p className="text-sm text-gray-600 mt-1">
+        <div className="px-4 sm:px-6 py-4 border-b border-gray-200">
+          <h3 className="text-base sm:text-lg font-medium text-gray-900">Provider Management</h3>
+          <p className="text-xs sm:text-sm text-gray-600 mt-1">
             Manage provider accounts, verification status, and disputes
           </p>
         </div>
 
-        <div className="overflow-x-auto">
+        {/* Desktop Table View */}
+        <div className="hidden lg:block overflow-x-auto">
           <table className="min-w-full divide-y divide-gray-200">
             <thead className="bg-gray-50">
               <tr>
@@ -332,27 +414,36 @@ export const AdminProviders: React.FC = () => {
                     </div>
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm font-medium space-x-2">
-                    <Button
-                      onClick={() => handleVerify(provider.id)}
-                      size="sm"
-                      variant="primary"
-                    >
-                      Verify
-                    </Button>
-                    <Button
-                      onClick={() => handleArchive(provider.id)}
-                      size="sm"
-                      variant={provider.archived ? "primary" : "secondary"}
-                    >
-                      {provider.archived ? 'Unarchive' : 'Archive'}
-                    </Button>
-                    <Button
-                      onClick={() => handleDisputed(provider.id, !provider.is_disputed)}
-                      size="sm"
-                      variant={provider.is_disputed ? "primary" : "secondary"}
-                    >
-                      {provider.is_disputed ? 'Resolve' : 'Flag'}
-                    </Button>
+                    <div className="flex flex-wrap gap-2">
+                      <Button
+                        onClick={() => handleVerify(provider.id)}
+                        size="sm"
+                        variant="primary"
+                      >
+                        {provider.badges?.includes('VERIFIED') ? 'Unverify' : 'Verify'}
+                      </Button>
+                      <Button
+                        onClick={() => handleGovApprove(provider.id)}
+                        size="sm"
+                        variant={provider.badges?.includes('GOV_APPROVED') ? "success" : "secondary"}
+                      >
+                        {provider.badges?.includes('GOV_APPROVED') ? 'Gov Approved' : 'Gov Approve'}
+                      </Button>
+                      <Button
+                        onClick={() => handleArchive(provider.id)}
+                        size="sm"
+                        variant={provider.archived ? "primary" : "secondary"}
+                      >
+                        {provider.archived ? 'Unarchive' : 'Archive'}
+                      </Button>
+                      <Button
+                        onClick={() => handleDisputed(provider.id, !provider.is_disputed)}
+                        size="sm"
+                        variant={provider.is_disputed ? "primary" : "secondary"}
+                      >
+                        {provider.is_disputed ? 'Resolve' : 'Flag'}
+                      </Button>
+                    </div>
                   </td>
                 </tr>
               ))}
@@ -360,11 +451,80 @@ export const AdminProviders: React.FC = () => {
           </table>
         </div>
 
+        {/* Mobile Card View */}
+        <div className="lg:hidden">
+          <div className="divide-y divide-gray-200">
+            {providers.map(provider => (
+              <div key={provider.id} className="p-4 hover:bg-gray-50">
+                <div className="flex items-start justify-between mb-3">
+                  <div>
+                    <h4 className="text-sm font-medium text-gray-900">{provider.name}</h4>
+                    <p className="text-sm text-gray-600">{provider.phone}</p>
+                    <p className="text-sm text-gray-600">{getIslandDisplayName(provider.island)}</p>
+                  </div>
+                  <div className="flex flex-col items-end space-y-1">
+                    <Badge
+                      label={provider.status.replace('_', ' ')}
+                      variant={
+                        provider.status === 'OPEN_NOW' ? 'success' :
+                        provider.status === 'BUSY_LIMITED' ? 'warning' : 'secondary'
+                      }
+                    />
+                    {provider.archived && (
+                      <Badge label="Archived" variant="secondary" />
+                    )}
+                    {provider.is_disputed && (
+                      <Badge label="Disputed" variant="error" />
+                    )}
+                  </div>
+                </div>
+
+                <div className="flex flex-wrap gap-1 mb-3">
+                  {provider.badges?.filter(b => b).map(badge => (
+                    <Badge key={badge} label={badge} variant="success" />
+                  ))}
+                </div>
+
+                <div className="grid grid-cols-2 gap-2">
+                  <Button
+                    onClick={() => handleVerify(provider.id)}
+                    size="sm"
+                    variant="primary"
+                  >
+                    {provider.badges?.includes('VERIFIED') ? 'Unverify' : 'Verify'}
+                  </Button>
+                  <Button
+                    onClick={() => handleGovApprove(provider.id)}
+                    size="sm"
+                    variant={provider.badges?.includes('GOV_APPROVED') ? "success" : "secondary"}
+                  >
+                    {provider.badges?.includes('GOV_APPROVED') ? 'Gov Approved' : 'Gov Approve'}
+                  </Button>
+                  <Button
+                    onClick={() => handleArchive(provider.id)}
+                    size="sm"
+                    variant={provider.archived ? "primary" : "secondary"}
+                  >
+                    {provider.archived ? 'Unarchive' : 'Archive'}
+                  </Button>
+                  <Button
+                    onClick={() => handleDisputed(provider.id, !provider.is_disputed)}
+                    size="sm"
+                    variant={provider.is_disputed ? "primary" : "secondary"}
+                  >
+                    {provider.is_disputed ? 'Resolve' : 'Flag'}
+                  </Button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+
         {providers.length === 0 && (
-          <div className="text-center py-12">
-            <div className="text-gray-400 text-4xl mb-4">📋</div>
-            <h3 className="text-lg font-medium text-gray-900 mb-2">No providers found</h3>
-            <p className="text-gray-600">Try adjusting your filters to see more results.</p>
+          <div className="text-center py-8 sm:py-12">
+            <div className="text-gray-400 text-3xl sm:text-4xl mb-4">📋</div>
+            <h3 className="text-base sm:text-lg font-medium text-gray-900 mb-2">No providers found</h3>
+            <p className="text-sm sm:text-base text-gray-600">Try adjusting your filters to see more results.</p>
           </div>
         )}
       </div>

@@ -509,6 +509,7 @@ app.get('/providers', async (req: Request, res: Response) => {
              CASE WHEN (p.plan = 'PREMIUM' AND (p.plan_source != 'TRIAL' OR p.trial_end_at > NOW())) AND
                        EXISTS (SELECT 1 FROM provider_badges WHERE provider_id = p.id AND badge = 'EMERGENCY_READY')
                   THEN 1 ELSE 0 END as emergency_boost_eligible,
+             (SELECT COALESCE(json_agg(pb.badge), '[]'::json) FROM provider_badges pb WHERE pb.provider_id = p.id) as badges,
              (SELECT array_agg(c.name) FROM categories c JOIN provider_categories pc ON c.id = pc.category_id WHERE pc.provider_id = p.id) as categories
       FROM providers p
       WHERE p.lifecycle_status != 'ARCHIVED'
@@ -1163,7 +1164,7 @@ app.post('/reports', async (req, res) => {
 
 app.get('/admin/providers', adminAuth, async (req, res) => {
   try {
-    const { island, categoryId, status, areaId } = req.query;
+    const { island, categoryId, status, areaId, verified, govApproved, archived, disputed } = req.query;
 
     // Validate island parameter
     const validIslands = ['STT', 'STX', 'STJ'];
@@ -1187,6 +1188,19 @@ app.get('/admin/providers', adminAuth, async (req, res) => {
       return res.status(400).json({ error: { code: 'INVALID_AREA_ID', message: 'Area ID must be a valid number', fieldErrors: { areaId: 'Must be a valid number' } } });
     }
 
+    // Validate boolean filter parameters
+    const validateBooleanParam = (param: any, paramName: string) => {
+      if (param && typeof param === 'string' && !['true', 'false'].includes(param)) {
+        return res.status(400).json({ error: { code: `INVALID_${paramName.toUpperCase()}`, message: `${paramName} must be 'true' or 'false'`, fieldErrors: { [paramName]: 'Must be true or false' } } });
+      }
+      return null;
+    };
+
+    if (validateBooleanParam(verified, 'verified')) return;
+    if (validateBooleanParam(govApproved, 'govApproved')) return;
+    if (validateBooleanParam(archived, 'archived')) return;
+    if (validateBooleanParam(disputed, 'disputed')) return;
+
     let query = `
       SELECT p.*,
              (SELECT MAX(created_at) FROM activity_events WHERE provider_id = p.id) as last_active_at,
@@ -1195,7 +1209,9 @@ app.get('/admin/providers', adminAuth, async (req, res) => {
              CASE WHEN p.plan_source = 'TRIAL' AND p.trial_end_at > NOW() THEN true ELSE false END as is_trial,
              p.is_disputed,
              p.disputed_at,
-             p.lifecycle_status
+             p.lifecycle_status,
+             (p.lifecycle_status = 'ARCHIVED') as archived,
+             (SELECT COALESCE(json_agg(pb2.badge), '[]'::json) FROM provider_badges pb2 WHERE pb2.provider_id = p.id) as badges
       FROM providers p
       WHERE 1=1
     `;
@@ -1223,6 +1239,38 @@ app.get('/admin/providers', adminAuth, async (req, res) => {
     if (areaId) {
       query += ` AND EXISTS (SELECT 1 FROM provider_areas pa WHERE pa.provider_id = p.id AND pa.area_id = $${paramIndex})`;
       params.push(areaId);
+      paramIndex++;
+    }
+
+    if (verified) {
+      const isVerified = verified === 'true';
+      if (isVerified) {
+        query += ` AND EXISTS (SELECT 1 FROM provider_badges pb WHERE pb.provider_id = p.id AND pb.badge = 'VERIFIED')`;
+      } else {
+        query += ` AND NOT EXISTS (SELECT 1 FROM provider_badges pb WHERE pb.provider_id = p.id AND pb.badge = 'VERIFIED')`;
+      }
+    }
+
+    if (govApproved) {
+      const isGovApproved = govApproved === 'true';
+      if (isGovApproved) {
+        query += ` AND EXISTS (SELECT 1 FROM provider_badges pb WHERE pb.provider_id = p.id AND pb.badge = 'GOV_APPROVED')`;
+      } else {
+        query += ` AND NOT EXISTS (SELECT 1 FROM provider_badges pb WHERE pb.provider_id = p.id AND pb.badge = 'GOV_APPROVED')`;
+      }
+    }
+
+    if (archived) {
+      const isArchived = archived === 'true';
+      query += ` AND (p.lifecycle_status = 'ARCHIVED') = $${paramIndex}`;
+      params.push(isArchived);
+      paramIndex++;
+    }
+
+    if (disputed) {
+      const isDisputed = disputed === 'true';
+      query += ` AND p.is_disputed = $${paramIndex}`;
+      params.push(isDisputed);
       paramIndex++;
     }
 
@@ -1269,6 +1317,45 @@ app.put('/admin/providers/:id/verify', adminAuth, async (req, res) => {
     });
 
     res.json({ message: 'Provider verification updated' });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+app.put('/admin/providers/:id/gov-approve', adminAuth, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { approved } = req.body;
+
+    if (approved) {
+      // Add GOV_APPROVED badge if not already present
+      await pool.query(`
+        INSERT INTO provider_badges (provider_id, badge)
+        VALUES ($1, 'GOV_APPROVED')
+        ON CONFLICT (provider_id, badge) DO NOTHING
+      `, [id]);
+    } else {
+      // Remove GOV_APPROVED badge
+      await pool.query(`
+        DELETE FROM provider_badges
+        WHERE provider_id = $1 AND badge = 'GOV_APPROVED'
+      `, [id]);
+    }
+
+    await pool.query('UPDATE providers SET status_last_updated_at = CURRENT_TIMESTAMP WHERE id = $1', [id]);
+    await ActivityService.logEvent(parseInt(id), 'GOV_APPROVED');
+
+    // Log audit event
+    const badgeText = approved ? 'GOV_APPROVED' : 'government unapproved';
+    await AuditService.log({
+      actionType: 'GOV_APPROVE',
+      adminActor: req.adminActor!,
+      providerId: parseInt(id),
+      notes: `Provider ${badgeText} by admin`
+    });
+
+    res.json({ message: 'Provider government approval updated' });
   } catch (error) {
     console.error(error);
     res.status(500).json({ error: 'Internal server error' });

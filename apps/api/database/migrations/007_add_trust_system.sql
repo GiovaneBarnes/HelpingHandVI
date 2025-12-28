@@ -7,7 +7,14 @@ CREATE TYPE activity_event_type AS ENUM (
   'PROFILE_UPDATED',
   'STATUS_UPDATED',
   'VERIFIED',
-  'ARCHIVED'
+  'ARCHIVED',
+  'PROFILE_VIEW',
+  'STATUS_UPDATE',
+  'LOGIN',
+  'CUSTOMER_CALL',
+  'CUSTOMER_SMS',
+  'CUSTOMER_WHATSAPP',
+  'STATUS_OPEN_FOR_WORK'
 );
 
 -- Add lifecycle_status column to providers
