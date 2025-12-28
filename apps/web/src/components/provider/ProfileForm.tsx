@@ -8,13 +8,14 @@ interface Category {
 
 interface ProfileFormProps {
   provider: Provider;
-  onSave: (profile: Partial<Pick<Provider, 'phone' | 'description' | 'categories' | 'areas'>>) => Promise<void>;
+  onSave: (profile: Partial<Pick<Provider, 'phone' | 'description' | 'categories' | 'areas' | 'contact_preference'>>) => Promise<void>;
   onRequestChange?: (field: 'name' | 'island', newValue: string, reason: string) => Promise<void>;
 }
 
 export const ProfileForm: React.FC<ProfileFormProps> = ({ provider, onSave, onRequestChange }) => {
   const [phone, setPhone] = useState(provider.phone);
   const [description, setDescription] = useState(provider.description);
+  const [contactPreference, setContactPreference] = useState(provider.contact_preference || 'BOTH');
   const [selectedCategories, setSelectedCategories] = useState<number[]>(provider.categories.map(c => c.id));
   const [availableCategories, setAvailableCategories] = useState<Category[]>([]);
   const [saving, setSaving] = useState(false);
@@ -51,7 +52,7 @@ export const ProfileForm: React.FC<ProfileFormProps> = ({ provider, onSave, onRe
       const categories = availableCategories
         .filter(cat => selectedCategories.includes(cat.id))
         .map(cat => ({ id: cat.id, name: cat.name }));
-      await onSave({ phone, description, categories });
+      await onSave({ phone, description, categories, contact_preference: contactPreference });
       setMessage('Profile updated successfully');
     } catch (err) {
       setMessage('Failed to update profile');
@@ -123,6 +124,19 @@ export const ProfileForm: React.FC<ProfileFormProps> = ({ provider, onSave, onRe
           onChange={(e) => setPhone(e.target.value)}
           className="mt-1 block w-full border-gray-300 rounded-md shadow-sm"
         />
+      </div>
+      <div>
+        <label className="block text-sm font-medium text-gray-700">Preferred Contact Method</label>
+        <select
+          value={contactPreference}
+          onChange={(e) => setContactPreference(e.target.value as 'PHONE' | 'EMAIL' | 'BOTH')}
+          className="mt-1 block w-full border-gray-300 rounded-md shadow-sm"
+        >
+          <option value="BOTH">Phone and Email (Recommended)</option>
+          <option value="PHONE">Phone Only</option>
+          <option value="EMAIL">Email Only</option>
+        </select>
+        <p className="text-sm text-gray-500 mt-1">How would you prefer customers to contact you? This will be displayed on your public profile.</p>
       </div>
       <div>
         <label className="block text-sm font-medium text-gray-700">Description</label>

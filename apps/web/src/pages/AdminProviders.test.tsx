@@ -148,11 +148,13 @@ describe('AdminProviders', () => {
     renderAdminProviders();
 
     await waitFor(() => {
-      expect(screen.getByText('John Doe')).toBeInTheDocument();
-      expect(screen.getByText('123-456-7890')).toBeInTheDocument();
-      expect(screen.getAllByText('St. Thomas')).toHaveLength(2); // One in select, one in table
-      expect(screen.getByText('OPEN NOW')).toBeInTheDocument();
-      expect(screen.getByText('VERIFIED')).toBeInTheDocument();
+      const table = document.querySelector('table');
+      expect(table).toBeInTheDocument();
+      expect(table!.textContent).toContain('John Doe');
+      expect(table!.textContent).toContain('123-456-7890');
+      expect(screen.getAllByText('St. Thomas')).toHaveLength(3); // One in select, one in table, one in mobile card view
+      expect(table!.textContent).toContain('OPEN NOW');
+      expect(table!.textContent).toContain('VERIFIED');
     });
   });
 
@@ -283,11 +285,32 @@ describe('AdminProviders', () => {
     renderAdminProviders();
 
     await waitFor(() => {
-      expect(screen.getByText('Archive')).toBeInTheDocument();
+      const table = document.querySelector('table');
+      expect(table).toBeInTheDocument();
+      expect(table!.textContent).toContain('John Doe');
     });
 
-    const archiveButton = screen.getByText('Archive');
-    fireEvent.click(archiveButton);
+    // Find the Archive button in the table row for John Doe
+    const table = document.querySelector('table');
+    expect(table).not.toBeNull();
+    const tbody = table!.querySelector('tbody');
+    expect(tbody).not.toBeNull();
+    const rows = tbody!.querySelectorAll('tr');
+    let archiveButton = null;
+    for (const row of rows) {
+      if (row.textContent.includes('John Doe')) {
+        const buttons = row.querySelectorAll('button');
+        for (const button of buttons) {
+          if (button.textContent.includes('Archive')) {
+            archiveButton = button;
+            break;
+          }
+        }
+        break;
+      }
+    }
+    expect(archiveButton).not.toBeNull();
+    fireEvent.click(archiveButton!);
 
     await waitFor(() => {
       expect(fetchMock).toHaveBeenCalledWith(
@@ -303,11 +326,32 @@ describe('AdminProviders', () => {
     renderAdminProviders();
 
     await waitFor(() => {
-      expect(screen.getByText('Unarchive')).toBeInTheDocument();
+      const table = document.querySelector('table');
+      expect(table).toBeInTheDocument();
+      expect(table!.textContent).toContain('Jane Smith');
     });
 
-    const unarchiveButton = screen.getByText('Unarchive');
-    fireEvent.click(unarchiveButton);
+    // Find the Unarchive button in the table row for Jane Smith (the archived provider)
+    const table = document.querySelector('table');
+    expect(table).not.toBeNull();
+    const tbody = table!.querySelector('tbody');
+    expect(tbody).not.toBeNull();
+    const rows = tbody!.querySelectorAll('tr');
+    let unarchiveButton = null;
+    for (const row of rows) {
+      if (row.textContent.includes('Jane Smith')) {
+        const buttons = row.querySelectorAll('button');
+        for (const button of buttons) {
+          if (button.textContent.includes('Unarchive')) {
+            unarchiveButton = button;
+            break;
+          }
+        }
+        break;
+      }
+    }
+    expect(unarchiveButton).not.toBeNull();
+    fireEvent.click(unarchiveButton!);
 
     await waitFor(() => {
       expect(fetchMock).toHaveBeenCalledWith(
@@ -323,11 +367,32 @@ describe('AdminProviders', () => {
     renderAdminProviders();
 
     await waitFor(() => {
-      expect(screen.getByText('Flag')).toBeInTheDocument();
+      const table = document.querySelector('table');
+      expect(table).toBeInTheDocument();
+      expect(table!.textContent).toContain('John Doe');
     });
 
-    const disputeButton = screen.getByText('Flag');
-    fireEvent.click(disputeButton);
+    // Find the Flag button in the table row for John Doe (a non-disputed provider)
+    const table = document.querySelector('table');
+    expect(table).not.toBeNull();
+    const tbody = table!.querySelector('tbody');
+    expect(tbody).not.toBeNull();
+    const rows = tbody!.querySelectorAll('tr');
+    let flagButton = null;
+    for (const row of rows) {
+      if (row.textContent.includes('John Doe')) {
+        const buttons = row.querySelectorAll('button');
+        for (const button of buttons) {
+          if (button.textContent.includes('Flag')) {
+            flagButton = button;
+            break;
+          }
+        }
+        break;
+      }
+    }
+    expect(flagButton).not.toBeNull();
+    fireEvent.click(flagButton!);
 
     await waitFor(() => {
       expect(fetchMock).toHaveBeenCalledWith(
@@ -346,11 +411,32 @@ describe('AdminProviders', () => {
     renderAdminProviders();
 
     await waitFor(() => {
-      expect(screen.getByText('Resolve')).toBeInTheDocument();
+      const table = document.querySelector('table');
+      expect(table).toBeInTheDocument();
+      expect(table!.textContent).toContain('Jane Smith');
     });
 
-    const undisputeButton = screen.getByText('Resolve');
-    fireEvent.click(undisputeButton);
+    // Find the Resolve button in the table row for Jane Smith (the disputed provider)
+    const table = document.querySelector('table');
+    expect(table).not.toBeNull();
+    const tbody = table!.querySelector('tbody');
+    expect(tbody).not.toBeNull();
+    const rows = tbody!.querySelectorAll('tr');
+    let resolveButton = null;
+    for (const row of rows) {
+      if (row.textContent.includes('Jane Smith')) {
+        const buttons = row.querySelectorAll('button');
+        for (const button of buttons) {
+          if (button.textContent.includes('Resolve')) {
+            resolveButton = button;
+            break;
+          }
+        }
+        break;
+      }
+    }
+    expect(resolveButton).not.toBeNull();
+    fireEvent.click(resolveButton!);
 
     await waitFor(() => {
       expect(fetchMock).toHaveBeenCalledWith(
@@ -393,9 +479,32 @@ describe('AdminProviders', () => {
     renderAdminProviders();
 
     await waitFor(() => {
-      const disputeButton = screen.getByText('Flag');
-      fireEvent.click(disputeButton);
+      const table = document.querySelector('table');
+      expect(table).toBeInTheDocument();
+      expect(table!.textContent).toContain('John Doe');
     });
+
+    // Find the Flag button in the table row for John Doe (a non-disputed provider)
+    const table = document.querySelector('table');
+    expect(table).not.toBeNull();
+    const tbody = table!.querySelector('tbody');
+    expect(tbody).not.toBeNull();
+    const rows = tbody!.querySelectorAll('tr');
+    let flagButton = null;
+    for (const row of rows) {
+      if (row.textContent.includes('John Doe')) {
+        const buttons = row.querySelectorAll('button');
+        for (const button of buttons) {
+          if (button.textContent.includes('Flag')) {
+            flagButton = button;
+            break;
+          }
+        }
+        break;
+      }
+    }
+    expect(flagButton).not.toBeNull();
+    fireEvent.click(flagButton!);
 
     // Should not make the API call
     expect(fetchMock).not.toHaveBeenCalledWith(
@@ -481,7 +590,7 @@ describe('AdminProviders', () => {
     fireEvent.click(archiveButton);
 
     await waitFor(() => {
-      expect(global.alert).toHaveBeenCalledWith('Error updating');
+      expect(global.alert).toHaveBeenCalledWith('Error updating archive status');
     });
   });
 

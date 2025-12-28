@@ -2,34 +2,35 @@ import request from 'supertest';
 import express from 'express';
 import { Pool } from 'pg';
 import crypto from 'crypto';
-import { app } from '../server'; // Assuming we export app from server.ts
+import { app, pool, setPool } from '../server'; // Import app, pool, and setPool
 
-// Mock the pool
-jest.mock('pg', () => {
-  const mockClient = {
+// Create mock pool
+const mockPool = {
+  query: jest.fn(),
+  connect: jest.fn(() => Promise.resolve({
     query: jest.fn(),
     release: jest.fn(),
-  };
-  const mockPool = {
-    query: jest.fn(),
-    connect: jest.fn(() => Promise.resolve(mockClient)),
-  };
-  return { Pool: jest.fn(() => mockPool) };
-});
+  })),
+  end: jest.fn(),
+};
+
+// Set the mock pool before tests run
+setPool(mockPool);
 
 // Set up test environment variables
 process.env.ADMIN_KEY = 'test-admin-key';
 process.env.NODE_ENV = 'test';
 
-const mockPool = new Pool() as any;
-const mockClient = {
-  query: jest.fn(),
-  release: jest.fn(),
-};
-
 describe('GET /providers', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    // Set up default mock that returns empty results for most queries
+    (pool.query as jest.Mock).mockImplementation((query: string) => {
+      if (query.includes('SELECT value FROM app_settings WHERE key =')) {
+        return Promise.resolve({ rows: [{ value: { enabled: false } }] });
+      }
+      return Promise.resolve({ rows: [] });
+    });
   });
 
   it('should return paginated results with default limit', async () => {
@@ -37,7 +38,7 @@ describe('GET /providers', () => {
       { id: 1, name: 'Provider 1', score: 100, last_active_at: '2023-01-01T00:00:00Z' },
       { id: 2, name: 'Provider 2', score: 90, last_active_at: '2023-01-01T00:00:00Z' },
     ];
-    (mockPool.query as jest.Mock).mockResolvedValue({ rows: mockProviders });
+    (pool.query as jest.Mock).mockResolvedValue({ rows: mockProviders });
 
     const response = await request(app).get('/providers');
 
@@ -48,11 +49,11 @@ describe('GET /providers', () => {
 
   it('should clamp limit to max 50', async () => {
     const mockProviders = Array(51).fill({ id: 1, score: 100, last_active_at: null });
-    (mockPool.query as jest.Mock).mockResolvedValue({ rows: mockProviders });
+    (pool.query as jest.Mock).mockResolvedValue({ rows: mockProviders });
 
     const response = await request(app).get('/providers?limit=100');
 
-    expect(mockPool.query).toHaveBeenCalledWith(
+    expect(pool.query).toHaveBeenCalledWith(
       expect.stringContaining('LIMIT $'),
       expect.arrayContaining([51]) // limit +1
     );
@@ -60,7 +61,7 @@ describe('GET /providers', () => {
 
   it('should return 400 for invalid limit', async () => {
     // Mock the emergency mode query
-    (mockPool.query as jest.Mock).mockResolvedValueOnce({ rows: [] });
+    (pool.query as jest.Mock).mockResolvedValueOnce({ rows: [] });
 
     const response = await request(app).get('/providers?limit=0');
 
@@ -104,12 +105,12 @@ describe('GET /providers', () => {
       trial_days_left: 0,
       is_trial: false
     }];
-    (mockPool.query as jest.Mock).mockResolvedValue({ rows: mockProviders });
+    (pool.query as jest.Mock).mockResolvedValue({ rows: mockProviders });
 
     const response = await request(app).get(`/providers?cursor=${cursor}`);
 
     expect(response.status).toBe(200);
-    expect(mockPool.query).toHaveBeenCalledWith(
+    expect(pool.query).toHaveBeenCalledWith(
       expect.stringContaining('trust_tier'),
       expect.any(Array)
     );
@@ -123,7 +124,7 @@ describe('GET /providers', () => {
   });
 
   it('should generate suggestions when no results', async () => {
-    (mockPool.query as jest.Mock).mockResolvedValue({ rows: [] });
+    (pool.query as jest.Mock).mockResolvedValue({ rows: [] });
 
     const response = await request(app).get('/providers?status=OPEN_NOW&island=STT');
 
@@ -137,12 +138,12 @@ describe('GET /providers', () => {
     const mockProviders = [
       { id: 1, name: 'Active Provider', lifecycle_status: 'ACTIVE', trust_score: 100 }
     ];
-    (mockPool.query as jest.Mock).mockResolvedValue({ rows: mockProviders });
+    (pool.query as jest.Mock).mockResolvedValue({ rows: mockProviders });
 
     const response = await request(app).get('/providers');
 
     expect(response.status).toBe(200);
-    expect(mockPool.query).toHaveBeenCalledWith(
+    expect(pool.query).toHaveBeenCalledWith(
       expect.stringContaining("p.lifecycle_status != 'ARCHIVED'"),
       expect.any(Array)
     );
@@ -152,12 +153,12 @@ describe('GET /providers', () => {
     const mockProviders = [
       { id: 1, name: 'STT Provider', island: 'STT', trust_score: 100 }
     ];
-    (mockPool.query as jest.Mock).mockResolvedValue({ rows: mockProviders });
+    (pool.query as jest.Mock).mockResolvedValue({ rows: mockProviders });
 
     const response = await request(app).get('/providers?island=STT');
 
     expect(response.status).toBe(200);
-    expect(mockPool.query).toHaveBeenCalledWith(
+    expect(pool.query).toHaveBeenCalledWith(
       expect.stringContaining('p.island = $'),
       expect.arrayContaining(['STT'])
     );
@@ -181,14 +182,14 @@ describe('GET /providers', () => {
   it('should filter by status', async () => {
     const mockEmergencyMode = { rows: [{ value: { enabled: false } }] };
     const mockProviders = [{ id: 1, name: 'Available Provider', status: 'OPEN_NOW' }];
-    (mockPool.query as jest.Mock)
+    (pool.query as jest.Mock)
       .mockResolvedValueOnce(mockEmergencyMode)
       .mockResolvedValueOnce({ rows: mockProviders });
 
     const response = await request(app).get('/providers?status=OPEN_NOW');
 
     expect(response.status).toBe(200);
-    expect(mockPool.query).toHaveBeenNthCalledWith(2,
+    expect(pool.query).toHaveBeenNthCalledWith(2,
       expect.stringContaining('p.status = $'),
       expect.arrayContaining(['OPEN_NOW'])
     );
@@ -197,14 +198,14 @@ describe('GET /providers', () => {
   it('should filter by category ID', async () => {
     const mockEmergencyMode = { rows: [{ value: { enabled: false } }] };
     const mockProviders = [{ id: 1, name: 'Electrician', categoryId: '1' }];
-    (mockPool.query as jest.Mock)
+    (pool.query as jest.Mock)
       .mockResolvedValueOnce(mockEmergencyMode)
       .mockResolvedValueOnce({ rows: mockProviders });
 
     const response = await request(app).get('/providers?categoryId=1');
 
     expect(response.status).toBe(200);
-    expect(mockPool.query).toHaveBeenNthCalledWith(2,
+    expect(pool.query).toHaveBeenNthCalledWith(2,
       expect.stringContaining('EXISTS (SELECT 1 FROM provider_categories pc WHERE pc.provider_id = p.id AND pc.category_id = $'),
       expect.arrayContaining(['1'])
     );
@@ -213,14 +214,14 @@ describe('GET /providers', () => {
   it('should filter by area ID', async () => {
     const mockEmergencyMode = { rows: [{ value: { enabled: false } }] };
     const mockProviders = [{ id: 1, name: 'Provider in Area', areaId: '1' }];
-    (mockPool.query as jest.Mock)
+    (pool.query as jest.Mock)
       .mockResolvedValueOnce(mockEmergencyMode)
       .mockResolvedValueOnce({ rows: mockProviders });
 
     const response = await request(app).get('/providers?areaId=1');
 
     expect(response.status).toBe(200);
-    expect(mockPool.query).toHaveBeenNthCalledWith(2,
+    expect(pool.query).toHaveBeenNthCalledWith(2,
       expect.stringContaining('EXISTS (SELECT 1 FROM provider_areas pa WHERE pa.provider_id = p.id AND pa.area_id = $'),
       expect.arrayContaining(['1'])
     );
@@ -229,35 +230,35 @@ describe('GET /providers', () => {
   it('should apply multiple filters simultaneously (island + status)', async () => {
     const mockEmergencyMode = { rows: [{ value: { enabled: false } }] };
     const mockProviders = [{ id: 1, name: 'Filtered Provider' }];
-    (mockPool.query as jest.Mock)
+    (pool.query as jest.Mock)
       .mockResolvedValueOnce(mockEmergencyMode)
       .mockResolvedValueOnce({ rows: mockProviders });
 
     const response = await request(app).get('/providers?island=STT&status=OPEN_NOW');
 
     expect(response.status).toBe(200);
-    const queryCall = (mockPool.query as jest.Mock).mock.calls[1][0];
+    const queryCall = (pool.query as jest.Mock).mock.calls[1][0];
     expect(queryCall).toContain('p.island = $');
     expect(queryCall).toContain('p.status = $');
-    expect((mockPool.query as jest.Mock).mock.calls[1][1]).toEqual(expect.arrayContaining(['STT', 'OPEN_NOW']));
+    expect((pool.query as jest.Mock).mock.calls[1][1]).toEqual(expect.arrayContaining(['STT', 'OPEN_NOW']));
   });
 
   it('should apply all filters simultaneously (island + area + category + status)', async () => {
     const mockEmergencyMode = { rows: [{ value: { enabled: false } }] };
     const mockProviders = [{ id: 1, name: 'Fully Filtered Provider' }];
-    (mockPool.query as jest.Mock)
+    (pool.query as jest.Mock)
       .mockResolvedValueOnce(mockEmergencyMode)
       .mockResolvedValueOnce({ rows: mockProviders });
 
     const response = await request(app).get('/providers?island=STT&areaId=1&categoryId=2&status=OPEN_NOW');
 
     expect(response.status).toBe(200);
-    const queryCall = (mockPool.query as jest.Mock).mock.calls[1][0];
+    const queryCall = (pool.query as jest.Mock).mock.calls[1][0];
     expect(queryCall).toContain('p.island = $');
     expect(queryCall).toContain('p.status = $');
     expect(queryCall).toContain('EXISTS (SELECT 1 FROM provider_categories pc WHERE pc.provider_id = p.id AND pc.category_id = $');
     expect(queryCall).toContain('EXISTS (SELECT 1 FROM provider_areas pa WHERE pa.provider_id = p.id AND pa.area_id = $');
-    expect((mockPool.query as jest.Mock).mock.calls[1][1]).toEqual(expect.arrayContaining(['STT', 'OPEN_NOW', '2', '1']));
+    expect((pool.query as jest.Mock).mock.calls[1][1]).toEqual(expect.arrayContaining(['STT', 'OPEN_NOW', '2', '1']));
   });
 
   it('should return all providers when no filters applied', async () => {
@@ -266,7 +267,7 @@ describe('GET /providers', () => {
       { id: 2, name: 'Provider 2' },
       { id: 3, name: 'Provider 3' }
     ];
-    (mockPool.query as jest.Mock).mockResolvedValue({ rows: mockProviders });
+    (pool.query as jest.Mock).mockResolvedValue({ rows: mockProviders });
 
     const response = await request(app).get('/providers');
 
@@ -281,21 +282,21 @@ describe('ActivityService', () => {
   });
 
   it('should log activity events successfully', async () => {
-    (mockPool.query as jest.Mock).mockResolvedValue({});
+    (pool.query as jest.Mock).mockResolvedValue({});
 
     // Import ActivityService dynamically since it's not exported
     const { ActivityService } = require('../server');
 
     await ActivityService.logEvent(1, 'PROFILE_UPDATED');
 
-    expect(mockPool.query).toHaveBeenCalledWith(
+    expect(pool.query).toHaveBeenCalledWith(
       'INSERT INTO activity_events (provider_id, event_type) VALUES ($1, $2)',
       [1, 'PROFILE_UPDATED']
     );
   });
 
   it('should handle activity logging errors gracefully', async () => {
-    (mockPool.query as jest.Mock).mockRejectedValue(new Error('Database error'));
+    (pool.query as jest.Mock).mockRejectedValue(new Error('Database error'));
 
     const { ActivityService } = require('../server');
 
@@ -308,7 +309,11 @@ describe('PUT /providers/:id', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     // Setup connect mock
-    (mockPool.connect as jest.Mock).mockResolvedValue(mockClient);
+    const mockClient = {
+      query: jest.fn(),
+      release: jest.fn(),
+    };
+    (pool.connect as jest.Mock).mockResolvedValue(mockClient);
     // Setup client mock
     (mockClient.query as jest.Mock).mockImplementation((query: string) => {
       if (query.includes('SELECT id FROM categories')) {
@@ -324,7 +329,7 @@ describe('PUT /providers/:id', () => {
 
   it('should update provider profile and log activity', async () => {
     // Mock the activity logging
-    (mockPool.query as jest.Mock).mockResolvedValue({});
+    (pool.query as jest.Mock).mockResolvedValue({});
 
     const response = await request(app)
       .put('/providers/1')
@@ -338,7 +343,7 @@ describe('PUT /providers/:id', () => {
 
     expect(response.status).toBe(200);
     expect(response.body.message).toBe('Updated');
-    expect(mockPool.query).toHaveBeenCalledWith(
+    expect(pool.query).toHaveBeenCalledWith(
       'INSERT INTO activity_events (provider_id, event_type) VALUES ($1, $2)',
       [1, 'PROFILE_UPDATED']
     );
@@ -351,7 +356,7 @@ describe('PUT /providers/:id/status', () => {
   });
 
   it('should update provider status and log activity', async () => {
-    (mockPool.query as jest.Mock).mockResolvedValue({});
+    (pool.query as jest.Mock).mockResolvedValue({});
 
     const response = await request(app)
       .put('/providers/1/status')
@@ -359,11 +364,11 @@ describe('PUT /providers/:id/status', () => {
 
     expect(response.status).toBe(200);
     expect(response.body.message).toBe('Status updated');
-    expect(mockPool.query).toHaveBeenCalledWith(
+    expect(pool.query).toHaveBeenCalledWith(
       'UPDATE providers SET status = $1, last_updated_at = CURRENT_TIMESTAMP WHERE id = $2',
       ['TODAY', '1']
     );
-    expect(mockPool.query).toHaveBeenCalledWith(
+    expect(pool.query).toHaveBeenCalledWith(
       'INSERT INTO activity_events (provider_id, event_type) VALUES ($1, $2)',
       [1, 'STATUS_UPDATED']
     );
@@ -381,20 +386,20 @@ describe('GET /providers/:id', () => {
       name: 'Test Provider',
       lifecycle_status: 'ACTIVE'
     };
-    (mockPool.query as jest.Mock).mockResolvedValue({ rows: [mockProvider] });
+    (pool.query as jest.Mock).mockResolvedValue({ rows: [mockProvider] });
 
     const response = await request(app).get('/providers/1');
 
     expect(response.status).toBe(200);
     expect(response.body.name).toBe('Test Provider');
-    expect(mockPool.query).toHaveBeenCalledWith(
+    expect(pool.query).toHaveBeenCalledWith(
       expect.stringContaining("p.lifecycle_status != 'ARCHIVED'"),
       ['1']
     );
   });
 
   it('should return 404 for archived provider', async () => {
-    (mockPool.query as jest.Mock).mockResolvedValue({ rows: [] });
+    (pool.query as jest.Mock).mockResolvedValue({ rows: [] });
 
     const response = await request(app).get('/providers/1');
 
@@ -418,7 +423,7 @@ describe('Admin Endpoints', () => {
         { id: 1, name: 'Provider 1', lifecycle_status: 'ACTIVE' },
         { id: 2, name: 'Provider 2', lifecycle_status: 'ARCHIVED' }
       ];
-      (mockPool.query as jest.Mock).mockResolvedValue({ rows: mockProviders });
+      (pool.query as jest.Mock).mockResolvedValue({ rows: mockProviders });
 
       const response = await request(app)
         .get('/admin/providers')
@@ -431,7 +436,7 @@ describe('Admin Endpoints', () => {
 
   describe('PUT /admin/providers/:id/verify', () => {
     it('should verify provider and log activity', async () => {
-      (mockPool.query as jest.Mock).mockResolvedValue({});
+      (pool.query as jest.Mock).mockResolvedValue({});
 
       const response = await request(app)
         .put('/admin/providers/1/verify')
@@ -440,15 +445,15 @@ describe('Admin Endpoints', () => {
 
       expect(response.status).toBe(200);
       expect(response.body.message).toBe('Provider verification updated');
-      expect(mockPool.query).toHaveBeenCalledWith(
+      expect(pool.query).toHaveBeenCalledWith(
         expect.stringContaining('INSERT INTO provider_badges'),
         ['1']
       );
-      expect(mockPool.query).toHaveBeenCalledWith(
+      expect(pool.query).toHaveBeenCalledWith(
         'UPDATE providers SET status_last_updated_at = CURRENT_TIMESTAMP WHERE id = $1',
         ['1']
       );
-      expect(mockPool.query).toHaveBeenCalledWith(
+      expect(pool.query).toHaveBeenCalledWith(
         'INSERT INTO activity_events (provider_id, event_type) VALUES ($1, $2)',
         [1, 'VERIFIED']
       );
@@ -457,7 +462,7 @@ describe('Admin Endpoints', () => {
 
   describe('PUT /admin/providers/:id/archive', () => {
     it('should archive provider and log activity', async () => {
-      (mockPool.query as jest.Mock)
+      (pool.query as jest.Mock)
         .mockResolvedValueOnce({ rows: [{ lifecycle_status: 'ACTIVE' }] }) // SELECT query
         .mockResolvedValueOnce({}) // UPDATE query
         .mockResolvedValueOnce({}) // Activity log
@@ -469,15 +474,15 @@ describe('Admin Endpoints', () => {
 
       expect(response.status).toBe(200);
       expect(response.body.message).toBe('Provider archived');
-      expect(mockPool.query).toHaveBeenCalledWith(
+      expect(pool.query).toHaveBeenCalledWith(
         'SELECT lifecycle_status FROM providers WHERE id = $1',
         ['1']
       );
-      expect(mockPool.query).toHaveBeenCalledWith(
+      expect(pool.query).toHaveBeenCalledWith(
         "UPDATE providers SET lifecycle_status = $1, status_last_updated_at = CURRENT_TIMESTAMP WHERE id = $2",
         ['ARCHIVED', '1']
       );
-      expect(mockPool.query).toHaveBeenCalledWith(
+      expect(pool.query).toHaveBeenCalledWith(
         'INSERT INTO activity_events (provider_id, event_type) VALUES ($1, $2)',
         [1, 'ARCHIVED']
       );
@@ -486,7 +491,7 @@ describe('Admin Endpoints', () => {
 
   describe('POST /admin/jobs/recompute-provider-lifecycle', () => {
     it('should recompute provider lifecycle and return affected count', async () => {
-      (mockPool.query as jest.Mock).mockResolvedValue({ rowCount: 5 });
+      (pool.query as jest.Mock).mockResolvedValue({ rowCount: 5 });
 
       const response = await request(app)
         .post('/admin/jobs/recompute-provider-lifecycle')
@@ -506,14 +511,14 @@ describe('GET /areas', () => {
       { id: 1, name: 'Charlotte Amalie', island: 'STT' },
       { id: 2, name: 'East End', island: 'STT' },
     ];
-    (mockPool.query as jest.Mock).mockResolvedValue({ rows: mockAreas });
+    (pool.query as jest.Mock).mockResolvedValue({ rows: mockAreas });
 
     const response = await request(app).get('/areas?island=STT');
 
     expect(response.status).toBe(200);
     expect(response.body).toHaveLength(2);
     expect(response.body[0].name).toBe('Charlotte Amalie');
-    expect(mockPool.query).toHaveBeenCalledWith(
+    expect(pool.query).toHaveBeenCalledWith(
       'SELECT id, name FROM areas WHERE island = $1 ORDER BY name',
       ['STT']
     );
@@ -528,14 +533,20 @@ describe('GET /areas', () => {
 });
 
 describe('POST /providers', () => {
+  let mockClient: any;
+
   beforeEach(() => {
     jest.clearAllMocks();
-    (mockPool.connect as jest.Mock).mockResolvedValue(mockClient);
+    mockClient = {
+      query: jest.fn(),
+      release: jest.fn(),
+    };
+    (pool.connect as jest.Mock).mockResolvedValue(mockClient);
     (mockClient.query as jest.Mock).mockResolvedValueOnce({ rows: [{ id: 1 }] }); // INSERT INTO providers
     (mockClient.query as jest.Mock).mockResolvedValueOnce({ rows: [{ id: 1 }] }); // SELECT id FROM categories
     (mockClient.query as jest.Mock).mockResolvedValue({ rows: [] }); // Other queries
     // Mock pool.query for verification and activity logging - always return empty results
-    (mockPool.query as jest.Mock).mockImplementation(() => Promise.resolve({ rows: [] }));
+    (pool.query as jest.Mock).mockImplementation(() => Promise.resolve({ rows: [] }));
   });
 
   it('should create provider with island selection', async () => {
@@ -623,14 +634,14 @@ describe('GET /providers with area filter', () => {
     const mockProviders = [
       { id: 1, name: 'Provider 1', trust_score: 100, last_active_at: null, status_last_updated_at: '2023-01-01T00:00:00Z' },
     ];
-    (mockPool.query as jest.Mock)
+    (pool.query as jest.Mock)
       .mockResolvedValueOnce(mockEmergencyMode)
       .mockResolvedValueOnce({ rows: mockProviders });
 
     const response = await request(app).get('/providers?status=OPEN_NOW&areaId=1');
 
     expect(response.status).toBe(200);
-    expect(mockPool.query).toHaveBeenNthCalledWith(2,
+    expect(pool.query).toHaveBeenNthCalledWith(2,
       expect.stringContaining('EXISTS (SELECT 1 FROM provider_areas pa WHERE pa.provider_id = p.id AND pa.area_id = $2)'),
       expect.arrayContaining(['OPEN_NOW', '1'])
     );
@@ -640,7 +651,11 @@ describe('GET /providers with area filter', () => {
 describe('POST /providers trial functionality', () => {
   beforeEach(() => {
     jest.clearAllMocks();
-    (mockPool.connect as jest.Mock).mockResolvedValue(mockClient);
+    const mockClient = {
+      query: jest.fn(),
+      release: jest.fn(),
+    };
+    (pool.connect as jest.Mock).mockResolvedValue(mockClient);
     (mockClient.query as jest.Mock).mockResolvedValue({ rows: [{ id: 1 }] });
   });
 
@@ -686,7 +701,7 @@ describe('POST /admin/jobs/expire-trials', () => {
   });
 
   it('should expire trials and downgrade providers', async () => {
-    (mockPool.query as jest.Mock).mockResolvedValue({ rowCount: 2 });
+    (pool.query as jest.Mock).mockResolvedValue({ rowCount: 2 });
 
     const response = await request(app)
       .post('/admin/jobs/expire-trials')
@@ -698,13 +713,13 @@ describe('POST /admin/jobs/expire-trials', () => {
       error: null
     });
 
-    expect(mockPool.query).toHaveBeenCalledWith(
+    expect(pool.query).toHaveBeenCalledWith(
       expect.stringContaining('UPDATE providers')
     );
   });
 
   it('should be idempotent - running twice yields 0', async () => {
-    (mockPool.query as jest.Mock)
+    (pool.query as jest.Mock)
       .mockResolvedValueOnce({ rowCount: 1 }) // First UPDATE
       .mockResolvedValueOnce({}) // First INSERT audit log
       .mockResolvedValueOnce({ rowCount: 0 }); // Second UPDATE
@@ -732,7 +747,7 @@ describe('Premium ranking boost', () => {
   describe('Premium Visibility within Trust Tiers', () => {
     it('should rank premium providers higher within the same trust tier', async () => {
       // Mock emergency mode query
-      (mockPool.query as jest.Mock)
+      (pool.query as jest.Mock)
         .mockResolvedValueOnce({ rows: [{ value: { enabled: false } }] })
         .mockResolvedValueOnce({ rows: [
           {
@@ -798,7 +813,7 @@ describe('Premium ranking boost', () => {
 
     it('should rank trust tiers correctly regardless of premium status', async () => {
       // Mock emergency mode query
-      (mockPool.query as jest.Mock)
+      (pool.query as jest.Mock)
         .mockResolvedValueOnce({ rows: [{ value: { enabled: false } }] })
         .mockResolvedValueOnce({ rows: [
           {
@@ -864,7 +879,7 @@ describe('Premium ranking boost', () => {
 
     it('should boost premium providers with EMERGENCY_READY in emergency mode', async () => {
       // Mock emergency mode query
-      (mockPool.query as jest.Mock)
+      (pool.query as jest.Mock)
         .mockResolvedValueOnce({ rows: [{ value: { enabled: true } }] })
         .mockResolvedValueOnce({ rows: [
           {
@@ -959,7 +974,7 @@ describe('Premium ranking boost', () => {
           is_trial: false
         }
       ];
-      (mockPool.query as jest.Mock).mockResolvedValue({ rows: mockProviders });
+      (pool.query as jest.Mock).mockResolvedValue({ rows: mockProviders });
 
       // Test various activity-based parameter names that should be ignored
       const response = await request(app).get('/providers?activeWithinHours=24&recentlyActive=true&lastActivity=1day');
@@ -967,7 +982,7 @@ describe('Premium ranking boost', () => {
       expect(response.status).toBe(200);
       expect(response.body.data.providers).toHaveLength(1);
       // The query should not include these parameters in filtering
-      expect(mockPool.query).toHaveBeenCalledWith(
+      expect(pool.query).toHaveBeenCalledWith(
         expect.stringContaining('WHERE p.lifecycle_status != \'ARCHIVED\''),
         expect.any(Array)
       );
@@ -1002,7 +1017,7 @@ describe('Premium ranking boost', () => {
           is_trial: false
         }
       ];
-      (mockPool.query as jest.Mock).mockResolvedValue({ rows: mockProviders });
+      (pool.query as jest.Mock).mockResolvedValue({ rows: mockProviders });
 
       const response = await request(app).get('/providers');
 
@@ -1018,7 +1033,15 @@ describe('GET /health', () => {
     const response = await request(app).get('/health');
 
     expect(response.status).toBe(200);
-    expect(response.body).toEqual({ ok: true });
+    expect(response.body.status).toBe('healthy');
+    expect(response.body).toHaveProperty('timestamp');
+    expect(response.body).toHaveProperty('checks');
+    expect(response.body).toHaveProperty('version');
+    expect(response.body.checks).toHaveProperty('database');
+    expect(response.body.checks).toHaveProperty('providers');
+    expect(response.body.checks).toHaveProperty('reports');
+    expect(response.body.checks).toHaveProperty('activity');
+    expect(response.body.checks).toHaveProperty('system');
   });
 });
 
@@ -1032,13 +1055,13 @@ describe('GET /areas', () => {
       { id: 1, name: 'Charlotte Amalie' },
       { id: 2, name: 'East End' },
     ];
-    (mockPool.query as jest.Mock).mockResolvedValue({ rows: mockAreas });
+    (pool.query as jest.Mock).mockResolvedValue({ rows: mockAreas });
 
     const response = await request(app).get('/areas?island=STT');
 
     expect(response.status).toBe(200);
     expect(response.body).toEqual(mockAreas);
-    expect(mockPool.query).toHaveBeenCalledWith(
+    expect(pool.query).toHaveBeenCalledWith(
       'SELECT id, name FROM areas WHERE island = $1 ORDER BY name',
       ['STT']
     );
@@ -1069,17 +1092,17 @@ describe('GET /categories', () => {
       { id: 1, name: 'Electrician' },
       { id: 2, name: 'Plumber' },
     ];
-    (mockPool.query as jest.Mock).mockResolvedValue({ rows: mockCategories });
+    (pool.query as jest.Mock).mockResolvedValue({ rows: mockCategories });
 
     const response = await request(app).get('/categories');
 
     expect(response.status).toBe(200);
     expect(response.body).toEqual(mockCategories);
-    expect(mockPool.query).toHaveBeenCalledWith('SELECT id, name FROM categories ORDER BY name');
+    expect(pool.query).toHaveBeenCalledWith('SELECT id, name FROM categories ORDER BY name');
   });
 
   it('should handle database errors', async () => {
-    (mockPool.query as jest.Mock).mockRejectedValue(new Error('Database error'));
+    (pool.query as jest.Mock).mockRejectedValue(new Error('Database error'));
 
     const response = await request(app).get('/categories');
 
@@ -1099,7 +1122,7 @@ describe('POST /login', () => {
       name: 'Test Provider',
       password_hash: 'salt:abcd1234'
     };
-    (mockPool.query as jest.Mock).mockResolvedValue({ rows: [mockProvider] });
+    (pool.query as jest.Mock).mockResolvedValue({ rows: [mockProvider] });
 
     // Mock crypto.pbkdf2Sync to return the expected hash
     const mockPbkdf2Sync = jest.spyOn(crypto, 'pbkdf2Sync');
@@ -1127,7 +1150,7 @@ describe('POST /login', () => {
   });
 
   it('should return 401 for invalid email', async () => {
-    (mockPool.query as jest.Mock).mockResolvedValue({ rows: [] });
+    (pool.query as jest.Mock).mockResolvedValue({ rows: [] });
 
     const response = await request(app)
       .post('/login')
@@ -1143,7 +1166,7 @@ describe('POST /login', () => {
       name: 'Test Provider',
       password_hash: 'salt:abcd1234'
     };
-    (mockPool.query as jest.Mock).mockResolvedValue({ rows: [mockProvider] });
+    (pool.query as jest.Mock).mockResolvedValue({ rows: [mockProvider] });
 
     const mockPbkdf2Sync = jest.spyOn(crypto, 'pbkdf2Sync');
     mockPbkdf2Sync.mockReturnValue(Buffer.from('wronghash', 'hex'));
@@ -1165,7 +1188,7 @@ describe('POST /forgot-password', () => {
   });
 
   it('should send reset email for valid email', async () => {
-    (mockPool.query as jest.Mock).mockResolvedValue({ rows: [{ id: 1 }] });
+    (pool.query as jest.Mock).mockResolvedValue({ rows: [{ id: 1 }] });
 
     const response = await request(app)
       .post('/forgot-password')
@@ -1176,7 +1199,7 @@ describe('POST /forgot-password', () => {
   });
 
   it('should return success even for non-existent email', async () => {
-    (mockPool.query as jest.Mock).mockResolvedValue({ rows: [] });
+    (pool.query as jest.Mock).mockResolvedValue({ rows: [] });
 
     const response = await request(app)
       .post('/forgot-password')
@@ -1219,17 +1242,17 @@ describe('GET /providers/:id', () => {
       last_active_at: '2023-01-01T00:00:00Z',
       areas: [{ id: 1, name: 'Charlotte Amalie', island: 'STT' }]
     };
-    (mockPool.query as jest.Mock).mockResolvedValue({ rows: [mockProvider] });
+    (pool.query as jest.Mock).mockResolvedValue({ rows: [mockProvider] });
 
     const response = await request(app).get('/providers/1');
 
     expect(response.status).toBe(200);
     expect(response.body).toEqual(mockProvider);
-    expect(mockPool.query).toHaveBeenCalledWith(expect.stringContaining('SELECT p.*'), ['1']);
+    expect(pool.query).toHaveBeenCalledWith(expect.stringContaining('SELECT p.*'), ['1']);
   });
 
   it('should return 404 for non-existent provider', async () => {
-    (mockPool.query as jest.Mock).mockResolvedValue({ rows: [] });
+    (pool.query as jest.Mock).mockResolvedValue({ rows: [] });
 
     const response = await request(app).get('/providers/999');
 
@@ -1238,7 +1261,7 @@ describe('GET /providers/:id', () => {
   });
 
   it('should handle database errors', async () => {
-    (mockPool.query as jest.Mock).mockRejectedValue(new Error('Database error'));
+    (pool.query as jest.Mock).mockRejectedValue(new Error('Database error'));
 
     const response = await request(app).get('/providers/1');
 
@@ -1254,7 +1277,7 @@ describe('POST /reset-password', () => {
 
   it('should reset password successfully', async () => {
     const mockProvider = { id: 1 };
-    (mockPool.query as jest.Mock)
+    (pool.query as jest.Mock)
       .mockResolvedValueOnce({ rows: [mockProvider] }) // Find provider
       .mockResolvedValueOnce({}); // Update password
 
@@ -1285,7 +1308,7 @@ describe('POST /reset-password', () => {
   });
 
   it('should return 400 for invalid token', async () => {
-    (mockPool.query as jest.Mock).mockResolvedValue({ rows: [] });
+    (pool.query as jest.Mock).mockResolvedValue({ rows: [] });
 
     const response = await request(app)
       .post('/reset-password')
@@ -1296,7 +1319,7 @@ describe('POST /reset-password', () => {
   });
 
   it('should handle database errors', async () => {
-    (mockPool.query as jest.Mock).mockRejectedValue(new Error('Database error'));
+    (pool.query as jest.Mock).mockRejectedValue(new Error('Database error'));
 
     const response = await request(app)
       .post('/reset-password')
@@ -1313,11 +1336,7 @@ describe('PUT /providers/:id/status', () => {
   });
 
   it('should update provider status', async () => {
-    (mockPool.query as jest.Mock).mockResolvedValue({});
-
-    // Mock VerificationService.updateVerificationStatus
-    const mockUpdateVerificationStatus = jest.spyOn(require('../server').VerificationService, 'updateVerificationStatus');
-    mockUpdateVerificationStatus.mockResolvedValue(undefined);
+    (pool.query as jest.Mock).mockResolvedValue({});
 
     const response = await request(app)
       .put('/providers/1/status')
@@ -1325,16 +1344,14 @@ describe('PUT /providers/:id/status', () => {
 
     expect(response.status).toBe(200);
     expect(response.body.message).toBe('Status updated');
-    expect(mockPool.query).toHaveBeenCalledWith(
+    expect(pool.query).toHaveBeenCalledWith(
       'UPDATE providers SET status = $1, last_updated_at = CURRENT_TIMESTAMP WHERE id = $2',
       ['BUSY_LIMITED', '1']
     );
-
-    mockUpdateVerificationStatus.mockRestore();
   });
 
   it('should handle database errors', async () => {
-    (mockPool.query as jest.Mock).mockRejectedValue(new Error('Database error'));
+    (pool.query as jest.Mock).mockRejectedValue(new Error('Database error'));
 
     const response = await request(app)
       .put('/providers/1/status')
@@ -1354,15 +1371,15 @@ describe('POST /providers', () => {
     const mockProvider = { id: 1 };
     const mockCategory = { id: 1 };
 
-    (mockPool.query as jest.Mock)
+    (pool.query as jest.Mock)
       .mockResolvedValueOnce({}) // BEGIN
       .mockResolvedValueOnce({ rows: [mockProvider] }) // INSERT provider
       .mockResolvedValueOnce({ rows: [mockCategory] }) // SELECT category
       .mockResolvedValueOnce({}) // INSERT provider_category
       .mockResolvedValueOnce({}); // COMMIT
 
-    (mockPool.connect as jest.Mock).mockResolvedValue({
-      query: mockPool.query,
+    (pool.connect as jest.Mock).mockResolvedValue({
+      query: pool.query,
       release: jest.fn()
     });
 
@@ -1442,7 +1459,7 @@ describe('POST /providers', () => {
   });
 
   it('should handle database errors', async () => {
-    (mockPool.connect as jest.Mock).mockRejectedValue(new Error('Database error'));
+    (pool.connect as jest.Mock).mockRejectedValue(new Error('Database error'));
 
     const response = await request(app)
       .post('/providers')
@@ -1469,7 +1486,7 @@ describe('PUT /providers/:id', () => {
     const mockCategory = { id: 1 };
     const mockArea = { id: 1 };
 
-    (mockPool.query as jest.Mock)
+    (pool.query as jest.Mock)
       .mockResolvedValueOnce({}) // BEGIN
       .mockResolvedValueOnce({}) // UPDATE provider
       .mockResolvedValueOnce({}) // DELETE categories
@@ -1481,14 +1498,10 @@ describe('PUT /providers/:id', () => {
       .mockResolvedValueOnce({}) // INSERT area
       .mockResolvedValueOnce({}); // COMMIT
 
-    (mockPool.connect as jest.Mock).mockResolvedValue({
-      query: mockPool.query,
+    (pool.connect as jest.Mock).mockResolvedValue({
+      query: pool.query,
       release: jest.fn()
     });
-
-    // Mock VerificationService.updateVerificationStatus
-    const mockUpdateVerificationStatus = jest.spyOn(require('../server').VerificationService, 'updateVerificationStatus');
-    mockUpdateVerificationStatus.mockResolvedValue(undefined);
 
     const response = await request(app)
       .put('/providers/1')
@@ -1504,8 +1517,6 @@ describe('PUT /providers/:id', () => {
 
     expect(response.status).toBe(200);
     expect(response.body.message).toBe('Updated');
-
-    mockUpdateVerificationStatus.mockRestore();
   });
 
   it('should return 400 for no areas', async () => {
@@ -1534,7 +1545,7 @@ describe('PUT /providers/:id', () => {
   });
 
   it('should handle database errors', async () => {
-    (mockPool.connect as jest.Mock).mockRejectedValue(new Error('Database error'));
+    (pool.connect as jest.Mock).mockRejectedValue(new Error('Database error'));
 
     const response = await request(app)
       .put('/providers/1')
@@ -1554,7 +1565,7 @@ describe('POST /reports', () => {
   });
 
   it('should submit a report successfully', async () => {
-    (mockPool.query as jest.Mock).mockResolvedValue({});
+    (pool.query as jest.Mock).mockResolvedValue({});
 
     const response = await request(app)
       .post('/reports')
@@ -1566,14 +1577,14 @@ describe('POST /reports', () => {
 
     expect(response.status).toBe(201);
     expect(response.body.message).toBe('Report submitted');
-    expect(mockPool.query).toHaveBeenCalledWith(
+    expect(pool.query).toHaveBeenCalledWith(
       'INSERT INTO reports (provider_id, reason, contact) VALUES ($1, $2, $3)',
       [1, 'Poor service', 'customer@example.com']
     );
   });
 
   it('should handle database errors', async () => {
-    (mockPool.query as jest.Mock).mockRejectedValue(new Error('Database error'));
+    (pool.query as jest.Mock).mockRejectedValue(new Error('Database error'));
 
     const response = await request(app)
       .post('/reports')
@@ -1594,7 +1605,7 @@ describe('POST /providers/:id/customer-interaction', () => {
   });
 
   it('should log customer call interaction', async () => {
-    (mockPool.query as jest.Mock).mockResolvedValue({});
+    (pool.query as jest.Mock).mockResolvedValue({});
 
     const response = await request(app)
       .post('/providers/1/customer-interaction')
@@ -1605,7 +1616,7 @@ describe('POST /providers/:id/customer-interaction', () => {
   });
 
   it('should log customer sms interaction', async () => {
-    (mockPool.query as jest.Mock).mockResolvedValue({});
+    (pool.query as jest.Mock).mockResolvedValue({});
 
     const response = await request(app)
       .post('/providers/1/customer-interaction')
@@ -1625,7 +1636,7 @@ describe('POST /providers/:id/customer-interaction', () => {
   });
 
   it('should handle database errors', async () => {
-    (mockPool.query as jest.Mock).mockRejectedValue(new Error('Database error'));
+    (pool.query as jest.Mock).mockRejectedValue(new Error('Database error'));
 
     const response = await request(app)
       .post('/providers/1/customer-interaction')
@@ -1642,23 +1653,17 @@ describe('POST /providers/:id/profile-view', () => {
   });
 
   it('should log profile view', async () => {
-    (mockPool.query as jest.Mock).mockResolvedValue({});
-
-    // Mock VerificationService.updateVerificationStatus
-    const mockUpdateVerificationStatus = jest.spyOn(require('../server').VerificationService, 'updateVerificationStatus');
-    mockUpdateVerificationStatus.mockResolvedValue(undefined);
+    (pool.query as jest.Mock).mockResolvedValue({});
 
     const response = await request(app)
       .post('/providers/1/profile-view');
 
     expect(response.status).toBe(200);
     expect(response.body.message).toBe('Profile view logged');
-
-    mockUpdateVerificationStatus.mockRestore();
   });
 
   it('should handle database errors', async () => {
-    (mockPool.query as jest.Mock).mockRejectedValue(new Error('Database error'));
+    (pool.query as jest.Mock).mockRejectedValue(new Error('Database error'));
 
     const response = await request(app)
       .post('/providers/1/profile-view');
@@ -1674,7 +1679,7 @@ describe('POST /providers/:id/login', () => {
   });
 
   it('should log provider login', async () => {
-    (mockPool.query as jest.Mock).mockResolvedValue({});
+    (pool.query as jest.Mock).mockResolvedValue({});
 
     const response = await request(app)
       .post('/providers/1/login');
@@ -1684,7 +1689,7 @@ describe('POST /providers/:id/login', () => {
   });
 
   it('should handle database errors', async () => {
-    (mockPool.query as jest.Mock).mockRejectedValue(new Error('Database error'));
+    (pool.query as jest.Mock).mockRejectedValue(new Error('Database error'));
 
     const response = await request(app)
       .post('/providers/1/login');
@@ -1700,7 +1705,7 @@ describe('GET /providers/:id/insights', () => {
   });
 
   it('should return provider insights for 7 days', async () => {
-    (mockPool.query as jest.Mock).mockResolvedValue({
+    (pool.query as jest.Mock).mockResolvedValue({
       rows: [{ calls: '5', sms: '3' }]
     });
 
@@ -1712,7 +1717,7 @@ describe('GET /providers/:id/insights', () => {
   });
 
   it('should return provider insights for 30 days', async () => {
-    (mockPool.query as jest.Mock).mockResolvedValue({
+    (pool.query as jest.Mock).mockResolvedValue({
       rows: [{ calls: '12', sms: '8' }]
     });
 
@@ -1724,7 +1729,7 @@ describe('GET /providers/:id/insights', () => {
   });
 
   it('should return zero insights when no data', async () => {
-    (mockPool.query as jest.Mock).mockResolvedValue({
+    (pool.query as jest.Mock).mockResolvedValue({
       rows: [{ calls: null, sms: null }]
     });
 
@@ -1736,7 +1741,7 @@ describe('GET /providers/:id/insights', () => {
   });
 
   it('should handle database errors', async () => {
-    (mockPool.query as jest.Mock).mockRejectedValue(new Error('Database error'));
+    (pool.query as jest.Mock).mockRejectedValue(new Error('Database error'));
 
     const response = await request(app)
       .get('/providers/1/insights');
@@ -1752,7 +1757,7 @@ describe('GET /admin/providers', () => {
   });
 
   it('should return all providers for admin', async () => {
-    (mockPool.query as jest.Mock).mockResolvedValue({
+    (pool.query as jest.Mock).mockResolvedValue({
       rows: [
         { id: 1, name: 'Test Provider', island: 'STT', status: 'OPEN_NOW' },
         { id: 2, name: 'Another Provider', island: 'STX', status: 'BUSY_LIMITED' }
@@ -1768,7 +1773,7 @@ describe('GET /admin/providers', () => {
   });
 
   it('should filter providers by island', async () => {
-    (mockPool.query as jest.Mock).mockResolvedValue({
+    (pool.query as jest.Mock).mockResolvedValue({
       rows: [{ id: 1, name: 'STT Provider', island: 'STT' }]
     });
 
@@ -1804,7 +1809,7 @@ describe('PUT /admin/providers/:id/verify', () => {
   });
 
   it('should verify a provider', async () => {
-    (mockPool.query as jest.Mock).mockResolvedValue({});
+    (pool.query as jest.Mock).mockResolvedValue({});
 
     const response = await request(app)
       .put('/admin/providers/1/verify')
@@ -1816,7 +1821,7 @@ describe('PUT /admin/providers/:id/verify', () => {
   });
 
   it('should unverify a provider', async () => {
-    (mockPool.query as jest.Mock).mockResolvedValue({});
+    (pool.query as jest.Mock).mockResolvedValue({});
 
     const response = await request(app)
       .put('/admin/providers/1/verify')
@@ -1843,7 +1848,7 @@ describe('PUT /admin/providers/:id/gov-approve', () => {
   });
 
   it('should approve government credentials for a provider', async () => {
-    (mockPool.query as jest.Mock).mockResolvedValue({});
+    (pool.query as jest.Mock).mockResolvedValue({});
 
     const response = await request(app)
       .put('/admin/providers/1/gov-approve')
@@ -1855,7 +1860,7 @@ describe('PUT /admin/providers/:id/gov-approve', () => {
   });
 
   it('should revoke government approval for a provider', async () => {
-    (mockPool.query as jest.Mock).mockResolvedValue({});
+    (pool.query as jest.Mock).mockResolvedValue({});
 
     const response = await request(app)
       .put('/admin/providers/1/gov-approve')
@@ -1882,7 +1887,7 @@ describe('PUT /admin/providers/:id/archive', () => {
   });
 
   it('should archive an active provider', async () => {
-    (mockPool.query as jest.Mock)
+    (pool.query as jest.Mock)
       .mockResolvedValueOnce({ rows: [{ lifecycle_status: 'ACTIVE' }] })
       .mockResolvedValueOnce({});
 
@@ -1895,7 +1900,7 @@ describe('PUT /admin/providers/:id/archive', () => {
   });
 
   it('should unarchive an archived provider', async () => {
-    (mockPool.query as jest.Mock)
+    (pool.query as jest.Mock)
       .mockResolvedValueOnce({ rows: [{ lifecycle_status: 'ARCHIVED' }] })
       .mockResolvedValueOnce({});
 
@@ -1908,7 +1913,7 @@ describe('PUT /admin/providers/:id/archive', () => {
   });
 
   it('should return 404 for non-existent provider', async () => {
-    (mockPool.query as jest.Mock).mockResolvedValue({ rows: [] });
+    (pool.query as jest.Mock).mockResolvedValue({ rows: [] });
 
     const response = await request(app)
       .put('/admin/providers/999/archive')
@@ -1925,7 +1930,7 @@ describe('PATCH /admin/providers/:id/disputed', () => {
   });
 
   it('should mark provider as disputed', async () => {
-    (mockPool.query as jest.Mock).mockResolvedValue({});
+    (pool.query as jest.Mock).mockResolvedValue({});
 
     const response = await request(app)
       .patch('/admin/providers/1/disputed')
@@ -1937,7 +1942,7 @@ describe('PATCH /admin/providers/:id/disputed', () => {
   });
 
   it('should unmark provider as disputed', async () => {
-    (mockPool.query as jest.Mock).mockResolvedValue({});
+    (pool.query as jest.Mock).mockResolvedValue({});
 
     const response = await request(app)
       .patch('/admin/providers/1/disputed')
@@ -1955,7 +1960,7 @@ describe('POST /admin/jobs/recompute-provider-lifecycle', () => {
   });
 
   it('should recompute provider lifecycle', async () => {
-    (mockPool.query as jest.Mock).mockResolvedValue({ rowCount: 5 });
+    (pool.query as jest.Mock).mockResolvedValue({ rowCount: 5 });
 
     const response = await request(app)
       .post('/admin/jobs/recompute-provider-lifecycle')
@@ -1972,7 +1977,7 @@ describe('POST /admin/jobs/expire-trials', () => {
   });
 
   it('should expire trials', async () => {
-    (mockPool.query as jest.Mock).mockResolvedValue({ rowCount: 3 });
+    (pool.query as jest.Mock).mockResolvedValue({ rowCount: 3 });
 
     const response = await request(app)
       .post('/admin/jobs/expire-trials')
@@ -1989,7 +1994,7 @@ describe('GET /admin/reports', () => {
   });
 
   it('should return reports for admin', async () => {
-    (mockPool.query as jest.Mock).mockResolvedValue({
+    (pool.query as jest.Mock).mockResolvedValue({
       rows: [
         { id: 1, provider_name: 'Test Provider', reason: 'Test report' }
       ]
@@ -2004,7 +2009,7 @@ describe('GET /admin/reports', () => {
   });
 
   it('should filter reports by status', async () => {
-    (mockPool.query as jest.Mock).mockResolvedValue({
+    (pool.query as jest.Mock).mockResolvedValue({
       rows: [{ id: 1, status: 'IN_REVIEW' }]
     });
 
@@ -2022,7 +2027,7 @@ describe('PATCH /admin/reports/:id', () => {
   });
 
   it('should update report status', async () => {
-    (mockPool.query as jest.Mock)
+    (pool.query as jest.Mock)
       .mockResolvedValueOnce({ rows: [{ status: 'NEW' }] })
       .mockResolvedValueOnce({});
 
@@ -2042,7 +2047,7 @@ describe('PATCH /admin/settings/emergency-mode', () => {
   });
 
   it('should enable emergency mode', async () => {
-    (mockPool.query as jest.Mock)
+    (pool.query as jest.Mock)
       .mockResolvedValueOnce({ rows: [{ value: { enabled: false } }] })
       .mockResolvedValueOnce({});
 
@@ -2056,7 +2061,7 @@ describe('PATCH /admin/settings/emergency-mode', () => {
   });
 
   it('should disable emergency mode', async () => {
-    (mockPool.query as jest.Mock)
+    (pool.query as jest.Mock)
       .mockResolvedValueOnce({ rows: [{ value: { enabled: true } }] })
       .mockResolvedValueOnce({});
 

@@ -88,7 +88,7 @@ describe('GET /providers', () => {
 
     // Activity events
     await client.query(`
-      INSERT INTO activity_events (provider_id, type, created_at) VALUES
+      INSERT INTO activity_events (provider_id, event_type, created_at) VALUES
       (1, 'PROFILE_UPDATED', '2023-12-25 10:00:00'),
       (2, 'STATUS_UPDATED', '2023-12-25 09:00:00'),
       (3, 'VERIFIED', '2023-12-25 08:00:00')

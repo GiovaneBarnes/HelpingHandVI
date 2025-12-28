@@ -32,6 +32,7 @@ export const Join: React.FC = () => {
     island: '',
     categories: [] as string[],
     emergency_calls_accepted: false,
+    contact_preference: 'BOTH' as 'PHONE' | 'EMAIL' | 'BOTH',
   });
   const [errors, setErrors] = useState<Record<string, string>>({});
 
@@ -80,6 +81,7 @@ export const Join: React.FC = () => {
         island: form.island,
         categories: form.categories,
         emergency_calls_accepted: form.emergency_calls_accepted,
+        contact_preference: form.contact_preference,
       }),
     })
       .then(response => {
@@ -150,7 +152,7 @@ export const Join: React.FC = () => {
           </div>
           <div className="mb-4">
             <label className="block text-sm font-medium mb-1" htmlFor="email">
-              Email <span className="text-red-500">*</span>
+              Business Email <span className="text-red-500">*</span>
             </label>
             <input
               id="email"
@@ -195,7 +197,7 @@ export const Join: React.FC = () => {
           </div>
           <div className="mb-4">
             <label className="block text-sm font-medium mb-1" htmlFor="phone">
-              Phone <span className="text-red-500">*</span>
+              Business Phone <span className="text-red-500">*</span>
             </label>
             <input
               id="phone"
@@ -205,6 +207,24 @@ export const Join: React.FC = () => {
               className="w-full border rounded px-3 py-2"
             />
             {errors.phone && <p className="text-red-500 text-sm">{errors.phone}</p>}
+          </div>
+          <div className="mb-4">
+            <label className="block text-sm font-medium mb-1">
+              Preferred Contact Method <span className="text-red-500">*</span>
+            </label>
+            <select
+              id="contact_preference"
+              value={form.contact_preference}
+              onChange={(e) => setForm(prev => ({ ...prev, contact_preference: e.target.value as 'PHONE' | 'EMAIL' | 'BOTH' }))}
+              className="w-full border rounded px-3 py-2"
+            >
+              <option value="BOTH">Phone and Email (Recommended)</option>
+              <option value="PHONE">Phone Only</option>
+              <option value="EMAIL">Email Only</option>
+            </select>
+            <p className="text-sm text-gray-600 mt-1">
+              How would you prefer customers to contact you? This will be displayed on your profile.
+            </p>
           </div>
           <div className="mb-4">
             <label className="block text-sm font-medium mb-1" htmlFor="island">

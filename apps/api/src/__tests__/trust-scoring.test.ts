@@ -35,7 +35,7 @@ describe('Trust Scoring System', () => {
 
     // Add activity events
     await pool.query(`
-      INSERT INTO activity_events (provider_id, type, created_at) VALUES
+      INSERT INTO activity_events (provider_id, event_type, created_at) VALUES
       (1, 'PROFILE_UPDATED', NOW() - INTERVAL '1 day'),
       (2, 'STATUS_UPDATED', NOW() - INTERVAL '2 days'),
       (3, 'VERIFIED', NOW() - INTERVAL '3 days'),
@@ -151,7 +151,7 @@ describe('Trust Scoring System', () => {
     `);
 
     await pool.query(`
-      INSERT INTO activity_events (provider_id, type, created_at) VALUES
+      INSERT INTO activity_events (provider_id, event_type, created_at) VALUES
       (8, 'PROFILE_UPDATED', NOW() - INTERVAL '1 hour'),
       (9, 'PROFILE_UPDATED', NOW() - INTERVAL '2 hours')
     `);

@@ -282,8 +282,11 @@ describe('LivePreviewCard', () => {
   it('handles categories as strings', () => {
     const stringCategoriesProvider = {
       ...mockProvider,
-      categories: ['Plumbing', 'Electrical']
-    } as any;
+      categories: [
+        { id: 1, name: 'Plumbing' },
+        { id: 2, name: 'Electrical' }
+      ]
+    };
     render(<LivePreviewCard provider={stringCategoriesProvider} />);
 
     expect(screen.getByText('Plumbing, Electrical')).toBeInTheDocument();
@@ -333,8 +336,8 @@ describe('LivePreviewCard', () => {
   it('handles single category correctly', () => {
     const singleCategoryProvider = {
       ...mockProvider,
-      categories: ['Plumbing']
-    } as any;
+      categories: [{ id: 1, name: 'Plumbing' }]
+    };
     render(<LivePreviewCard provider={singleCategoryProvider} />);
 
     expect(screen.getByText('Plumbing')).toBeInTheDocument();

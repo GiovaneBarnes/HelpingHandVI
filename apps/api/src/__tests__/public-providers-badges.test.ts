@@ -1,27 +1,23 @@
 import request from 'supertest';
 import { Pool } from 'pg';
+import { app, pool, setPool } from '../server'; // Import app, pool, and setPool
 
-// Mock the pool before importing the app
-jest.mock('pg', () => {
-  const mockClient = {
+// Create mock pool
+const mockPool = {
+  query: jest.fn(),
+  connect: jest.fn(() => Promise.resolve({
     query: jest.fn(),
     release: jest.fn(),
-  };
-  const mockPool = {
-    query: jest.fn(),
-    connect: jest.fn(() => Promise.resolve(mockClient)),
-  };
-  return { Pool: jest.fn(() => mockPool) };
-});
+  })),
+  end: jest.fn(),
+};
 
-// Import app after mocking
-import { app } from '../server';
+// Set the mock pool before tests run
+setPool(mockPool);
 
 // Set up test environment variables
 process.env.ADMIN_KEY = 'test-admin-key';
 process.env.NODE_ENV = 'test';
-
-const mockPool = new Pool() as any;
 
 describe('Public Providers Badge Display', () => {
   beforeEach(() => {
@@ -112,7 +108,12 @@ describe('Public Providers Badge Display', () => {
   ];
 
   it('returns providers with badge information', async () => {
-    (mockPool.query as jest.Mock).mockResolvedValueOnce({
+    // Mock emergency mode query
+    (pool.query as jest.Mock).mockResolvedValueOnce({
+      rows: [{ value: { enabled: false } }]
+    });
+    // Mock main providers query
+    (pool.query as jest.Mock).mockResolvedValueOnce({
       rows: mockProviders.slice(0, 3), // Return first 3 providers
     });
 
@@ -134,7 +135,12 @@ describe('Public Providers Badge Display', () => {
   });
 
   it('returns providers with multiple badges', async () => {
-    (mockPool.query as jest.Mock).mockResolvedValueOnce({
+    // Mock emergency mode query
+    (pool.query as jest.Mock).mockResolvedValueOnce({
+      rows: [{ value: { enabled: false } }]
+    });
+    // Mock main providers query
+    (pool.query as jest.Mock).mockResolvedValueOnce({
       rows: [mockProviders[3]], // Return provider with multiple badges
     });
 
@@ -150,7 +156,12 @@ describe('Public Providers Badge Display', () => {
   });
 
   it('returns empty badges array for providers without badges', async () => {
-    (mockPool.query as jest.Mock).mockResolvedValueOnce({
+    // Mock emergency mode query
+    (pool.query as jest.Mock).mockResolvedValueOnce({
+      rows: [{ value: { enabled: false } }]
+    });
+    // Mock main providers query
+    (pool.query as jest.Mock).mockResolvedValueOnce({
       rows: [mockProviders[2]], // Return provider with no badges
     });
 
@@ -174,7 +185,12 @@ describe('Public Providers Badge Display', () => {
 
     const cursor = Buffer.from(JSON.stringify(cursorData)).toString('base64');
 
-    (mockPool.query as jest.Mock).mockResolvedValueOnce({
+    // Mock emergency mode query
+    (pool.query as jest.Mock).mockResolvedValueOnce({
+      rows: [{ value: { enabled: false } }]
+    });
+    // Mock main providers query
+    (pool.query as jest.Mock).mockResolvedValueOnce({
       rows: [mockProviders[1]], // Return next provider
     });
 
@@ -187,7 +203,12 @@ describe('Public Providers Badge Display', () => {
   });
 
   it('maintains badge data structure across different query parameters', async () => {
-    (mockPool.query as jest.Mock).mockResolvedValueOnce({
+    // Mock emergency mode query
+    (pool.query as jest.Mock).mockResolvedValueOnce({
+      rows: [{ value: { enabled: false } }]
+    });
+    // Mock main providers query
+    (pool.query as jest.Mock).mockResolvedValueOnce({
       rows: mockProviders.slice(0, 2),
     });
 
@@ -203,7 +224,12 @@ describe('Public Providers Badge Display', () => {
   });
 
   it('handles providers with emergency ready badge', async () => {
-    (mockPool.query as jest.Mock).mockResolvedValueOnce({
+    // Mock emergency mode query
+    (pool.query as jest.Mock).mockResolvedValueOnce({
+      rows: [{ value: { enabled: false } }]
+    });
+    // Mock main providers query
+    (pool.query as jest.Mock).mockResolvedValueOnce({
       rows: [mockProviders[3]], // Provider with EMERGENCY_READY badge
     });
 

@@ -105,8 +105,15 @@ HelpingHandVI - Connecting customers with trusted service providers in the Virgi
 
   private async sendWithSendGrid(options: EmailOptions): Promise<void> {
     // Dynamic import to avoid requiring SendGrid if not used
-    const sgMailModule = await import('@sendgrid/mail');
-    const sgMail = sgMailModule.default;
+    // In test environment, use static import for mocking
+    let sgMail: any;
+    if (process.env.NODE_ENV === 'test') {
+      const sgMailModule = require('@sendgrid/mail');
+      sgMail = sgMailModule.default || sgMailModule;
+    } else {
+      const sgMailModule = await import('@sendgrid/mail');
+      sgMail = sgMailModule.default;
+    }
 
     if (!process.env.SENDGRID_API_KEY) {
       throw new Error('SENDGRID_API_KEY environment variable is required for SendGrid provider');

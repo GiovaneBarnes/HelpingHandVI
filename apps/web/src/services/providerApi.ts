@@ -27,6 +27,7 @@ export interface Provider {
   trial_days_left: number;
   is_trial: boolean;
   emergency_boost_eligible: boolean;
+  contact_preference?: 'PHONE' | 'EMAIL' | 'BOTH';
 }
 
 export interface Insights {
@@ -38,7 +39,7 @@ export interface ProviderApi {
   login(email: string, password: string): Promise<{ token: string; firebaseUser?: AuthUser }>;
   getMe(): Promise<Provider>;
   updateStatus(status: Provider['status']): Promise<Provider>;
-  updateProfile(profile: Partial<Pick<Provider, 'phone' | 'description' | 'categories' | 'areas'>>): Promise<Provider>;
+  updateProfile(profile: Partial<Pick<Provider, 'phone' | 'description' | 'categories' | 'areas' | 'contact_preference'>>): Promise<Provider>;
   heartbeat(): Promise<{ ok: boolean; last_active_at: string }>;
   getInsights(range: '7d' | '30d'): Promise<Insights>;
   logLogin(): Promise<void>;

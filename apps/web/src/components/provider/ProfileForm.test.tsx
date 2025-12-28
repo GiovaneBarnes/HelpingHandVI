@@ -152,6 +152,7 @@ describe('ProfileForm', () => {
         phone: '987-654-3210',
         description: 'Test description',
         categories: [{ id: 1, name: 'Plumbing' }],
+        contact_preference: 'BOTH',
       });
     });
 
@@ -267,7 +268,9 @@ describe('ProfileForm', () => {
     fireEvent.click(islandChangeButton);
 
     // Fill form - select starts with STT, change to STJ
-    const islandSelect = screen.getByRole('combobox');
+    const modal = screen.getByRole('heading', { name: 'Request Location Change' }).closest('.bg-white');
+    expect(modal).not.toBeNull();
+    const islandSelect = modal!.querySelector('select') as HTMLSelectElement;
     fireEvent.change(islandSelect, { target: { value: 'STJ' } });
 
     const reasonTextarea = screen.getByPlaceholderText('Please explain why you need this change...');
@@ -285,7 +288,7 @@ describe('ProfileForm', () => {
   });
 
   it('handles request change error', async () => {
-    mockOnRequestChange.mockRejectedValueOnce(new Error('Request failed'));
+    mockOnRequestChange.mockRejectedValue(new Error('Request failed'));
 
     render(
       <ProfileForm

@@ -86,7 +86,7 @@ const ProviderDashboard: React.FC = () => {
     }
   };
 
-  const handleProfileSave = async (profile: Partial<Pick<Provider, 'phone' | 'description' | 'categories' | 'areas'>>) => {
+  const handleProfileSave = async (profile: Partial<Pick<Provider, 'phone' | 'description' | 'categories' | 'areas' | 'contact_preference'>>) => {
     if (!provider) return;
     const updated = await providerApi.updateProfile(profile);
     setProvider(updated);

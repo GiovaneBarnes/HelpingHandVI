@@ -425,7 +425,7 @@ export const AdminProviders: React.FC = () => {
                       <Button
                         onClick={() => handleGovApprove(provider.id)}
                         size="sm"
-                        variant={provider.badges?.includes('GOV_APPROVED') ? "success" : "secondary"}
+                        variant={provider.badges?.includes('GOV_APPROVED') ? "primary" : "secondary"}
                       >
                         {provider.badges?.includes('GOV_APPROVED') ? 'Gov Approved' : 'Gov Approve'}
                       </Button>
@@ -496,7 +496,7 @@ export const AdminProviders: React.FC = () => {
                   <Button
                     onClick={() => handleGovApprove(provider.id)}
                     size="sm"
-                    variant={provider.badges?.includes('GOV_APPROVED') ? "success" : "secondary"}
+                    variant={provider.badges?.includes('GOV_APPROVED') ? "primary" : "secondary"}
                   >
                     {provider.badges?.includes('GOV_APPROVED') ? 'Gov Approved' : 'Gov Approve'}
                   </Button>

@@ -1,14 +1,7 @@
 import { EmailService, emailService } from '../emailService';
 
-// Mock SendGrid at the module level
-const mockSendGrid = {
-  setApiKey: jest.fn(),
-  send: jest.fn().mockResolvedValue(undefined)
-};
-
-jest.mock('@sendgrid/mail', () => Promise.resolve({
-  default: mockSendGrid
-}));
+// Import the mock
+const mockSendGrid = require('../__mocks__/@sendgrid/mail').default;
 
 describe('EmailService', () => {
   let originalEnv: NodeJS.ProcessEnv;
@@ -80,9 +73,7 @@ describe('EmailService', () => {
       expect(consoleLogSpy).toHaveBeenCalledWith('📧 EMAIL WOULD BE SENT (using console provider)');
     });
 
-    it.skip('should route to SendGrid when configured', async () => {
-      // TODO: Implement SendGrid integration test when SendGrid is properly mocked
-      // This test is skipped due to dynamic import mocking complexity
+    it('should send email via SendGrid successfully', async () => {
       process.env.EMAIL_PROVIDER = 'sendgrid';
       process.env.SENDGRID_API_KEY = 'test-api-key';
       process.env.FROM_EMAIL = 'test@helpinghandvi.com';
@@ -95,8 +86,17 @@ describe('EmailService', () => {
         text: 'Test text'
       };
 
-      // This would test SendGrid integration
-      // await service.sendEmail(options);
+      await service.sendEmail(options);
+
+      expect(mockSendGrid.setApiKey).toHaveBeenCalledWith('test-api-key');
+      expect(mockSendGrid.send).toHaveBeenCalledWith({
+        to: 'test@example.com',
+        from: 'test@helpinghandvi.com',
+        subject: 'Test Subject',
+        html: '<p>Test HTML</p>',
+        text: 'Test text'
+      });
+      expect(consoleLogSpy).toHaveBeenCalledWith('✅ Password reset email sent to test@example.com via SendGrid');
     });
 
     it('should throw error for SendGrid without API key', async () => {

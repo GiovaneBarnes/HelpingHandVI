@@ -21,6 +21,7 @@ interface Provider {
   is_trial: boolean;
   categories: string[];
   badges: string[];
+  contact_preference?: 'PHONE' | 'EMAIL' | 'BOTH';
 }
 
 type Filters = {
@@ -357,6 +358,11 @@ export const Home: React.FC = () => {
             <p className="text-sm text-gray-500 mb-4">
               Activity: {provider.last_active_at ? getHoursAgo(provider.last_active_at) : 'Never'}
             </p>
+            {provider.contact_preference && provider.contact_preference !== 'BOTH' && (
+              <p className="text-sm text-blue-600 mb-2">
+                Prefers contact by {provider.contact_preference === 'PHONE' ? 'phone' : 'email'} only
+              </p>
+            )}
             <div className="flex space-x-2">
               <Button href={`tel:${provider.phone}`}>Call</Button>
               <Button

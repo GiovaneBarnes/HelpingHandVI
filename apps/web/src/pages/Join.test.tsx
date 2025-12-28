@@ -87,7 +87,7 @@ describe('Join', () => {
     renderJoin();
 
     expect(screen.getByText('Name')).toBeInTheDocument();
-    expect(screen.getByText('Phone')).toBeInTheDocument();
+    expect(screen.getByText('Business Phone')).toBeInTheDocument();
   });
 
   it('updates form state when inputs change', () => {
@@ -95,7 +95,7 @@ describe('Join', () => {
 
     // Find inputs by their labels
     const nameLabel = screen.getByText('Name');
-    const phoneLabel = screen.getByText('Phone');
+    const phoneLabel = screen.getByText('Business Phone');
     const nameInput = nameLabel.nextElementSibling as HTMLInputElement;
     const phoneInput = phoneLabel.nextElementSibling as HTMLInputElement;
 
@@ -133,10 +133,10 @@ describe('Join', () => {
 
     // Fill required fields - find inputs by their labels
     const nameInput = screen.getByLabelText(/^Name/);
-    const emailInput = screen.getByLabelText(/^Email/);
+    const emailInput = screen.getByLabelText(/^Business Email/);
     const passwordInput = screen.getByLabelText(/^Password/);
     const confirmPasswordInput = screen.getByLabelText(/^Confirm Password/);
-    const phoneInput = screen.getByLabelText(/^Phone/);
+    const phoneInput = screen.getByLabelText(/^Business Phone/);
 
     fireEvent.change(nameInput, { target: { value: 'John Doe' } });
     fireEvent.change(emailInput, { target: { value: 'john@example.com' } });
@@ -187,10 +187,10 @@ describe('Join', () => {
 
     // Fill required fields
     const nameInput = screen.getByLabelText(/^Name/);
-    const emailInput = screen.getByLabelText(/^Email/);
+    const emailInput = screen.getByLabelText(/^Business Email/);
     const passwordInput = screen.getByLabelText(/^Password/);
     const confirmPasswordInput = screen.getByLabelText(/^Confirm Password/);
-    const phoneInput = screen.getByLabelText(/^Phone/);
+    const phoneInput = screen.getByLabelText(/^Business Phone/);
 
     fireEvent.change(nameInput, { target: { value: 'John Doe' } });
     fireEvent.change(emailInput, { target: { value: 'john@example.com' } });
@@ -244,8 +244,8 @@ describe('Join', () => {
 
     // Fill required fields
     const nameLabel = screen.getByText('Name');
-    const phoneLabel = screen.getByText('Phone');
-    const emailLabel = screen.getByText('Email');
+    const phoneLabel = screen.getByText('Business Phone');
+    const emailLabel = screen.getByText('Business Email');
     const passwordLabel = screen.getByText('Password');
     const confirmPasswordLabel = screen.getByText('Confirm Password');
     const nameInput = nameLabel.nextElementSibling as HTMLInputElement;
