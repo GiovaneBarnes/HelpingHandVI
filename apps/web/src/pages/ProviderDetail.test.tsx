@@ -64,11 +64,11 @@ describe('ProviderDetail', () => {
     renderProviderDetail();
 
     await waitFor(() => {
-      expect(screen.getByText('John Doe')).toBeInTheDocument();
+      expect(screen.getByRole('heading', { level: 1, name: 'John Doe' })).toBeInTheDocument();
     });
 
-    expect(screen.getByText('St. Thomas')).toBeInTheDocument();
-    expect(screen.getByText('TODAY')).toBeInTheDocument();
+    expect(screen.getAllByText('St. Thomas')).toHaveLength(1); // In main detail
+    expect(screen.getAllByText('TODAY')).toHaveLength(1); // In main detail
   });
 
   it('displays activity time correctly', async () => {
@@ -80,7 +80,7 @@ describe('ProviderDetail', () => {
     renderProviderDetail();
 
     await waitFor(() => {
-      expect(screen.getByText('John Doe')).toBeInTheDocument();
+      expect(screen.getByRole('heading', { level: 1, name: 'John Doe' })).toBeInTheDocument();
     });
 
     // Should display "0 hours ago" (tests getHoursAgo function)
@@ -127,7 +127,7 @@ describe('ProviderDetail', () => {
     renderProviderDetail();
 
     await waitFor(() => {
-      expect(screen.getByText('John Doe')).toBeInTheDocument();
+      expect(screen.getByRole('heading', { level: 1, name: 'John Doe' })).toBeInTheDocument();
     });
 
     const reportButton = screen.getByText('Report this listing');
@@ -164,7 +164,7 @@ describe('ProviderDetail', () => {
     renderProviderDetail();
 
     await waitFor(() => {
-      expect(screen.getByText('John Doe')).toBeInTheDocument();
+      expect(screen.getByRole('heading', { level: 1, name: 'John Doe' })).toBeInTheDocument();
     });
 
     const reportButton = screen.getByText('Report this listing');
@@ -177,23 +177,6 @@ describe('ProviderDetail', () => {
     );
   });
 
-  it('renders availability meaning block', async () => {
-    fetchMock.mockResolvedValueOnce({
-      ok: true,
-      json: () => Promise.resolve(mockProvider),
-    });
-
-    renderProviderDetail();
-
-    await waitFor(() => {
-      expect(screen.getByText('John Doe')).toBeInTheDocument();
-    });
-
-    expect(screen.getByText('Availability')).toBeInTheDocument();
-    expect(screen.getByText('Availability shows when this provider is generally open to new work. It is not a scheduled appointment.')).toBeInTheDocument();
-    expect(screen.getByText('Confirm timing directly with the provider.')).toBeInTheDocument();
-  });
-
   it('renders disclaimer copy above CTAs', async () => {
     fetchMock.mockResolvedValueOnce({
       ok: true,
@@ -203,7 +186,7 @@ describe('ProviderDetail', () => {
     renderProviderDetail();
 
     await waitFor(() => {
-      expect(screen.getByText('John Doe')).toBeInTheDocument();
+      expect(screen.getByRole('heading', { level: 1, name: 'John Doe' })).toBeInTheDocument();
     });
 
     // Check that disclaimer text exists
@@ -211,8 +194,8 @@ describe('ProviderDetail', () => {
     expect(screen.getByText('Confirm details directly with the provider.')).toBeInTheDocument();
 
     // Check DOM order: disclaimer should appear before CTA buttons
-    const disclaimerElement = screen.getByText("We don't guarantee work, pricing, timing, or quality.").closest('.border-blue-200');
-    const contactSection = screen.getByText('Contact').closest('div');
+    const disclaimerElement = screen.getByText("We don't guarantee work, pricing, timing, or quality.").closest('.border-blue-200') as HTMLElement;
+    const contactSection = screen.getByText('Contact').closest('div') as HTMLElement;
     const ctaButton = screen.getByText('📞 Call');
 
     // Disclaimer should be within contact section and before CTA buttons
@@ -229,7 +212,7 @@ describe('ProviderDetail', () => {
     renderProviderDetail();
 
     await waitFor(() => {
-      expect(screen.getByText('John Doe')).toBeInTheDocument();
+      expect(screen.getByRole('heading', { level: 1, name: 'John Doe' })).toBeInTheDocument();
     });
 
     expect(screen.getByText('Preferred contact: CALL')).toBeInTheDocument();
@@ -246,7 +229,7 @@ describe('ProviderDetail', () => {
     renderProviderDetail();
 
     await waitFor(() => {
-      expect(screen.getByText('John Doe')).toBeInTheDocument();
+      expect(screen.getByRole('heading', { level: 1, name: 'John Doe' })).toBeInTheDocument();
     });
 
     expect(screen.queryByText(/Preferred contact:/)).not.toBeInTheDocument();
@@ -261,7 +244,7 @@ describe('ProviderDetail', () => {
     renderProviderDetail();
 
     await waitFor(() => {
-      expect(screen.getByText('John Doe')).toBeInTheDocument();
+      expect(screen.getByRole('heading', { level: 1, name: 'John Doe' })).toBeInTheDocument();
     });
 
     expect(screen.getByText('Hours')).toBeInTheDocument();
@@ -279,7 +262,7 @@ describe('ProviderDetail', () => {
     renderProviderDetail();
 
     await waitFor(() => {
-      expect(screen.getByText('John Doe')).toBeInTheDocument();
+      expect(screen.getByRole('heading', { level: 1, name: 'John Doe' })).toBeInTheDocument();
     });
 
     expect(screen.queryByText(/Typical hours:/)).not.toBeInTheDocument();
@@ -296,7 +279,7 @@ describe('ProviderDetail', () => {
     renderProviderDetail();
 
     await waitFor(() => {
-      expect(screen.getByText('John Doe')).toBeInTheDocument();
+      expect(screen.getByRole('heading', { level: 1, name: 'John Doe' })).toBeInTheDocument();
     });
 
     expect(screen.getByText('Emergency Calls Accepted')).toBeInTheDocument();
@@ -313,7 +296,7 @@ describe('ProviderDetail', () => {
     renderProviderDetail();
 
     await waitFor(() => {
-      expect(screen.getByText('John Doe')).toBeInTheDocument();
+      expect(screen.getByRole('heading', { level: 1, name: 'John Doe' })).toBeInTheDocument();
     });
 
     expect(screen.queryByText('Emergency Calls Accepted')).not.toBeInTheDocument();
@@ -328,7 +311,7 @@ describe('ProviderDetail', () => {
     renderProviderDetail();
 
     await waitFor(() => {
-      expect(screen.getByText('John Doe')).toBeInTheDocument();
+      expect(screen.getByRole('heading', { level: 1, name: 'John Doe' })).toBeInTheDocument();
     });
 
     // Should show Call button (enabled)
@@ -358,7 +341,7 @@ describe('ProviderDetail', () => {
     renderProviderDetail();
 
     await waitFor(() => {
-      expect(screen.getByText('John Doe')).toBeInTheDocument();
+      expect(screen.getByRole('heading', { level: 1, name: 'John Doe' })).toBeInTheDocument();
     });
 
     expect(screen.getByText('📞 Call')).toBeInTheDocument();

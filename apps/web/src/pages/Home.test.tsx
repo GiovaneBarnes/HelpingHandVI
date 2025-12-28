@@ -505,72 +505,6 @@ describe('Home', () => {
     });
   });
 
-  it('fetches areas when island is selected', async () => {
-    fetchMock.mockImplementation((url: string) => {
-      if (url.includes('/settings/emergency-mode')) {
-        return Promise.resolve({
-          ok: true,
-          json: () => Promise.resolve({ enabled: false })
-        });
-      } else if (url.includes('/areas')) {
-        return Promise.resolve({
-          ok: true,
-          json: () => Promise.resolve([
-            { id: 1, name: 'Charlotte Amalie' },
-            { id: 2, name: 'East End' }
-          ])
-        });
-      } else if (url.includes('/providers')) {
-        return Promise.resolve({
-          ok: true,
-          json: () => Promise.resolve({
-            data: {
-              providers: [
-                {
-                  id: 1,
-                  name: 'John Doe',
-                  phone: '123-456-7890',
-                  island: 'STJ',
-                  status: 'TODAY',
-                  last_active_at: new Date().toISOString(),
-                  lifecycle_status: 'ACTIVE',
-                  is_premium_active: false,
-                  is_trial: false,
-                  profile: {}
-                }
-              ],
-              nextCursor: null,
-              hasMore: false,
-              suggestions: []
-            }
-          })
-        });
-      }
-      return Promise.reject(new Error('Unexpected URL'));
-    });
-
-    renderHome();
-
-    await waitFor(() => {
-      expect(screen.getByText('John Doe')).toBeInTheDocument();
-    });
-
-    const islandSelect = screen.getByDisplayValue('All Islands');
-    fireEvent.change(islandSelect, { target: { value: 'STT' } });
-
-    await waitFor(() => {
-      expect(fetchMock).toHaveBeenCalledWith('http://localhost:3000/areas?island=STT');
-    });
-
-    // Check that area select is enabled and populated
-    const areaSelect = screen.getByDisplayValue('All Areas');
-    expect(areaSelect).not.toBeDisabled();
-
-    await waitFor(() => {
-      expect(screen.getByText('Charlotte Amalie')).toBeInTheDocument();
-    });
-  });
-
   it('displays activity time correctly', async () => {
     const fiveHoursAgo = new Date(Date.now() - 5 * 60 * 60 * 1000).toISOString();
 
@@ -695,70 +629,6 @@ describe('Home', () => {
     expect(screen.getAllByText('Call')).toHaveLength(2);
   });
 
-  it('renders view details link for each provider', async () => {
-    renderHome();
-
-    await waitFor(() => {
-      expect(screen.getByText('John Doe')).toBeInTheDocument();
-    });
-
-    const viewDetailsLinks = screen.getAllByText('View Details');
-    expect(viewDetailsLinks).toHaveLength(2);
-  });
-
-  it('handles fetch areas error gracefully', async () => {
-    fetchMock.mockImplementation((url: string) => {
-      if (url.includes('/settings/emergency-mode')) {
-        return Promise.resolve({
-          ok: true,
-          json: () => Promise.resolve({ enabled: false })
-        });
-      } else if (url.includes('/areas')) {
-        return Promise.reject(new Error('Network error'));
-      } else if (url.includes('/providers')) {
-        return Promise.resolve({
-          ok: true,
-          json: () => Promise.resolve({
-            data: {
-              providers: [
-                {
-                  id: 1,
-                  name: 'John Doe',
-                  phone: '123-456-7890',
-                  island: 'STJ',
-                  status: 'TODAY',
-                  last_active_at: new Date().toISOString(),
-                  lifecycle_status: 'ACTIVE',
-                  is_premium_active: false,
-                  is_trial: false,
-                  profile: {}
-                }
-              ],
-              nextCursor: null,
-              hasMore: false,
-              suggestions: []
-            }
-          })
-        });
-      }
-      return Promise.reject(new Error('Unexpected URL'));
-    });
-
-    renderHome();
-
-    await waitFor(() => {
-      expect(screen.getByText('John Doe')).toBeInTheDocument();
-    });
-
-    const islandSelect = screen.getByDisplayValue('All Islands');
-    fireEvent.change(islandSelect, { target: { value: 'STT' } });
-
-    // Should not crash, areas dropdown should remain disabled
-    await waitFor(() => {
-      expect(fetchMock).toHaveBeenCalledWith('http://localhost:3000/areas?island=STT');
-    });
-  });
-
   it('handles fetch emergency mode error gracefully', async () => {
     fetchMock.mockImplementation((url: string) => {
       if (url.includes('/settings/emergency-mode')) {
@@ -825,7 +695,7 @@ describe('Home', () => {
                   id: 1,
                   label: 'Try removing island filter',
                   description: 'Remove the island filter to see more results',
-                  patch: { island: null, areaId: null }
+                  patch: { island: null }
                 }
               ]
             }

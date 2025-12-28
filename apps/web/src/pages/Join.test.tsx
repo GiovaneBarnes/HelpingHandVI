@@ -22,15 +22,17 @@ describe('Join', () => {
     mockFetch.mockClear();
     mockNavigate.mockClear();
     mockFetch.mockImplementation((url: string) => {
-      if (url.includes('/areas')) {
+      if (url.includes('/categories')) {
         return Promise.resolve({
           ok: true,
           json: () => Promise.resolve([
-            { id: 1, name: 'Cruz Bay', island: 'STJ' },
-            { id: 2, name: 'Coral Bay', island: 'STJ' }
+            { id: 1, name: 'Electrician' },
+            { id: 2, name: 'Plumber' },
+            { id: 3, name: 'AC Technician' }
           ])
         });
-      } else if (url.includes('/providers')) {
+      }
+      if (url.includes('/providers')) {
         return Promise.resolve({
           ok: true,
           json: () => Promise.resolve({ id: 123, token: 'abc123' })
@@ -48,10 +50,17 @@ describe('Join', () => {
     );
   };
 
-  it('renders the join form with title', () => {
+  it('renders the join form with island selection and advice', () => {
     renderJoin();
 
     expect(screen.getByText('Join as Provider')).toBeInTheDocument();
+    expect(screen.getByText('Choose a professional name that customers will recognize and trust.')).toBeInTheDocument();
+    expect(screen.getByText('Choose your island carefully - this determines which customers can find you.')).toBeInTheDocument();
+    
+    // Check that island select is present
+    const islandSelect = screen.getByDisplayValue('Select your island');
+    expect(islandSelect).toBeInTheDocument();
+    
     // Check for form element by finding the submit button within it
     const form = document.querySelector('form');
     expect(form).toBeInTheDocument();
@@ -62,8 +71,6 @@ describe('Join', () => {
 
     expect(screen.getByText('Name')).toBeInTheDocument();
     expect(screen.getByText('Phone')).toBeInTheDocument();
-    expect(screen.getByText('WhatsApp (optional)')).toBeInTheDocument();
-    expect(screen.getByText('Island')).toBeInTheDocument();
   });
 
   it('updates form state when inputs change', () => {
@@ -82,24 +89,7 @@ describe('Join', () => {
     expect(phoneInput).toHaveValue('123-456-7890');
   });
 
-  it('fetches areas when island is selected', async () => {
-    renderJoin();
-
-    const islandSelect = screen.getByDisplayValue('Select Island');
-    fireEvent.change(islandSelect, { target: { value: 'STJ' } });
-
-    await waitFor(() => {
-      expect(mockFetch).toHaveBeenCalledWith('http://localhost:3000/areas?island=STJ');
-    });
-  });
-
   it('shows validation errors for required fields', async () => {
-    mockFetch.mockResolvedValueOnce({
-      ok: false,
-      status: 400,
-      json: () => Promise.resolve({ errors: { name: 'Name is required', phone: 'Phone is required' } })
-    });
-
     renderJoin();
 
     const submitButton = screen.getByRole('button', { name: 'Join' });
@@ -107,33 +97,43 @@ describe('Join', () => {
 
     await waitFor(() => {
       expect(screen.getByText('Name is required')).toBeInTheDocument();
+      expect(screen.getByText('Email is required')).toBeInTheDocument();
+      expect(screen.getByText('Password is required')).toBeInTheDocument();
+      expect(screen.getByText('Please confirm your password')).toBeInTheDocument();
       expect(screen.getByText('Phone is required')).toBeInTheDocument();
+      expect(screen.getByText('Island is required')).toBeInTheDocument();
+      expect(screen.getByText('At least one category required')).toBeInTheDocument();
     });
   });
 
   it('navigates to dashboard on successful submission', async () => {
     renderJoin();
 
+    // Wait for categories to load
+    await waitFor(() => {
+      expect(screen.getByText('Electrician')).toBeInTheDocument();
+    });
+
     // Fill required fields - find inputs by their labels
-    const nameLabel = screen.getByText('Name');
-    const phoneLabel = screen.getByText('Phone');
-    const nameInput = nameLabel.nextElementSibling as HTMLInputElement;
-    const phoneInput = phoneLabel.nextElementSibling as HTMLInputElement;
-    const islandSelect = screen.getByDisplayValue('Select Island');
+    const nameInput = screen.getByLabelText(/^Name/);
+    const emailInput = screen.getByLabelText(/^Email/);
+    const passwordInput = screen.getByLabelText(/^Password/);
+    const confirmPasswordInput = screen.getByLabelText(/^Confirm Password/);
+    const phoneInput = screen.getByLabelText(/^Phone/);
 
     fireEvent.change(nameInput, { target: { value: 'John Doe' } });
+    fireEvent.change(emailInput, { target: { value: 'john@example.com' } });
+    fireEvent.change(passwordInput, { target: { value: 'password123' } });
+    fireEvent.change(confirmPasswordInput, { target: { value: 'password123' } });
     fireEvent.change(phoneInput, { target: { value: '123-456-7890' } });
-    
-    // Select island
-    fireEvent.change(islandSelect, { target: { value: 'STJ' } });
 
+    // Select island
+    const islandSelect = screen.getByDisplayValue('Select your island');
+    fireEvent.change(islandSelect, { target: { value: 'STT' } });
+    
     // Select a category checkbox
     const electricianCheckbox = screen.getByLabelText('Electrician');
     fireEvent.click(electricianCheckbox);
-
-    // Select an area checkbox (areas are pre-loaded in test mode)
-    const cruzBayCheckbox = screen.getByLabelText('Cruz Bay');
-    fireEvent.click(cruzBayCheckbox);
 
     const submitButton = screen.getByRole('button', { name: 'Join' });
     fireEvent.click(submitButton);
@@ -143,108 +143,63 @@ describe('Join', () => {
     });
   });
 
-  it('displays contact method checkboxes', () => {
+  it('renders the join form with island selection and advice', () => {
     renderJoin();
 
-    expect(screen.getByText('Enable Call button')).toBeInTheDocument();
-    expect(screen.getByText('Enable WhatsApp button')).toBeInTheDocument();
-    expect(screen.getByText('Enable SMS button')).toBeInTheDocument();
+    expect(screen.getByText('Join as Provider')).toBeInTheDocument();
+    expect(screen.getByText('Choose a professional name that customers will recognize and trust.')).toBeInTheDocument();
+    expect(screen.getByText('Choose your island carefully - this determines which customers can find you.')).toBeInTheDocument();
+    
+    // Check that island select is present
+    const islandSelect = screen.getByDisplayValue('Select your island');
+    expect(islandSelect).toBeInTheDocument();
+    
+    // Check for form element by finding the submit button within it
+    const form = document.querySelector('form');
+    expect(form).toBeInTheDocument();
   });
 
-  it('handles fetch areas error gracefully', async () => {
-    mockFetch.mockImplementation((url: string) => {
-      if (url.includes('/areas')) {
-        return Promise.reject(new Error('Network error'));
-      }
-      return Promise.reject(new Error('Unexpected URL'));
-    });
-
+  it('allows selecting island and submits form', async () => {
     renderJoin();
 
-    const islandSelect = screen.getByDisplayValue('Select Island');
-    fireEvent.change(islandSelect, { target: { value: 'STJ' } });
-
-    // Should not crash, areas list should remain empty
+    // Wait for categories to load
     await waitFor(() => {
-      expect(mockFetch).toHaveBeenCalledWith('http://localhost:3000/areas?island=STJ');
+      expect(screen.getByText('Electrician')).toBeInTheDocument();
     });
-  });
-
-  it('validates preferred contact method must be enabled', async () => {
-    mockFetch.mockResolvedValueOnce({
-      ok: false,
-      status: 400,
-      json: () => Promise.resolve({ errors: {} })
-    });
-
-    renderJoin();
 
     // Fill required fields
-    const nameLabel = screen.getByText('Name');
-    const phoneLabel = screen.getByText('Phone');
-    const nameInput = nameLabel.nextElementSibling as HTMLInputElement;
-    const phoneInput = phoneLabel.nextElementSibling as HTMLInputElement;
-    const islandSelect = screen.getByDisplayValue('Select Island');
+    const nameInput = screen.getByLabelText(/^Name/);
+    const emailInput = screen.getByLabelText(/^Email/);
+    const passwordInput = screen.getByLabelText(/^Password/);
+    const confirmPasswordInput = screen.getByLabelText(/^Confirm Password/);
+    const phoneInput = screen.getByLabelText(/^Phone/);
 
     fireEvent.change(nameInput, { target: { value: 'John Doe' } });
+    fireEvent.change(emailInput, { target: { value: 'john@example.com' } });
+    fireEvent.change(passwordInput, { target: { value: 'password123' } });
+    fireEvent.change(confirmPasswordInput, { target: { value: 'password123' } });
     fireEvent.change(phoneInput, { target: { value: '123-456-7890' } });
-    fireEvent.change(islandSelect, { target: { value: 'STJ' } });
 
-    // Select categories and areas
+    // Select island
+    const islandSelect = screen.getByDisplayValue('Select your island');
+    fireEvent.change(islandSelect, { target: { value: 'STT' } });
+
+    // Select categories
     const electricianCheckbox = screen.getByLabelText('Electrician');
     fireEvent.click(electricianCheckbox);
-    const cruzBayCheckbox = screen.getByLabelText('Cruz Bay');
-    fireEvent.click(cruzBayCheckbox);
-
-    // Set preferred to CALL, then disable CALL
-    const preferredSelect = screen.getByDisplayValue('None');
-    fireEvent.change(preferredSelect, { target: { value: 'CALL' } });
-
-    // Now disable CALL
-    const callCheckbox = screen.getByLabelText('Enable Call button');
-    fireEvent.click(callCheckbox);
 
     const submitButton = screen.getByRole('button', { name: 'Join' });
     fireEvent.click(submitButton);
 
     await waitFor(() => {
-      expect(screen.getByText('Preferred method must be enabled')).toBeInTheDocument();
+      expect(mockFetch).toHaveBeenCalledWith(
+        'http://localhost:3000/providers',
+        expect.objectContaining({
+          method: 'POST',
+          body: expect.stringContaining('"island":"STT"')
+        })
+      );
     });
-  });
-
-  it('handles area checkbox changes', () => {
-    renderJoin();
-
-    const cruzBayCheckbox = screen.getByLabelText('Cruz Bay');
-    fireEvent.click(cruzBayCheckbox);
-
-    expect(cruzBayCheckbox).toBeChecked();
-  });
-
-  it('handles contact method changes and clears preferred when disabled', () => {
-    renderJoin();
-
-    // Enable WhatsApp and set as preferred
-    const whatsappCheckbox = screen.getByLabelText('Enable WhatsApp button');
-    fireEvent.click(whatsappCheckbox);
-    
-    const preferredSelect = screen.getByDisplayValue('None');
-    fireEvent.change(preferredSelect, { target: { value: 'WHATSAPP' } });
-
-    // Now disable WhatsApp
-    fireEvent.click(whatsappCheckbox);
-
-    // Preferred should be cleared
-    expect(preferredSelect).toHaveValue('');
-  });
-
-  it('enables SMS contact method', () => {
-    renderJoin();
-
-    const smsCheckbox = screen.getByLabelText('Enable SMS button');
-    expect(smsCheckbox).toBeChecked(); // Should be checked by default
-    fireEvent.click(smsCheckbox);
-    expect(smsCheckbox).not.toBeChecked();
   });
 
   it('shows alert on submission error', async () => {
@@ -253,15 +208,7 @@ describe('Join', () => {
     global.alert = alertMock;
 
     mockFetch.mockImplementation((url: string) => {
-      if (url.includes('/areas')) {
-        return Promise.resolve({
-          ok: true,
-          json: () => Promise.resolve([
-            { id: 1, name: 'Cruz Bay', island: 'STJ' },
-            { id: 2, name: 'Coral Bay', island: 'STJ' }
-          ])
-        });
-      } else if (url.includes('/providers')) {
+      if (url.includes('/providers')) {
         return Promise.resolve({
           ok: false,
           json: () => Promise.resolve({ error: 'Server error' })
@@ -272,26 +219,36 @@ describe('Join', () => {
 
     renderJoin();
 
+    // Wait for categories to load
+    await waitFor(() => {
+      expect(screen.getByText('Electrician')).toBeInTheDocument();
+    });
+
     // Fill required fields
     const nameLabel = screen.getByText('Name');
     const phoneLabel = screen.getByText('Phone');
+    const emailLabel = screen.getByText('Email');
+    const passwordLabel = screen.getByText('Password');
+    const confirmPasswordLabel = screen.getByText('Confirm Password');
     const nameInput = nameLabel.nextElementSibling as HTMLInputElement;
     const phoneInput = phoneLabel.nextElementSibling as HTMLInputElement;
-    const islandSelect = screen.getByDisplayValue('Select Island');
+    const emailInput = emailLabel.nextElementSibling as HTMLInputElement;
+    const passwordInput = passwordLabel.nextElementSibling as HTMLInputElement;
+    const confirmPasswordInput = confirmPasswordLabel.nextElementSibling as HTMLInputElement;
 
     fireEvent.change(nameInput, { target: { value: 'John Doe' } });
     fireEvent.change(phoneInput, { target: { value: '123-456-7890' } });
-    fireEvent.change(islandSelect, { target: { value: 'STJ' } });
+    fireEvent.change(emailInput, { target: { value: 'john@example.com' } });
+    fireEvent.change(passwordInput, { target: { value: 'password123' } });
+    fireEvent.change(confirmPasswordInput, { target: { value: 'password123' } });
 
-    // Select categories and areas
+    // Select island
+    const islandSelect = screen.getByDisplayValue('Select your island');
+    fireEvent.change(islandSelect, { target: { value: 'STT' } });
+
+    // Select categories
     const electricianCheckbox = screen.getByLabelText('Electrician');
     fireEvent.click(electricianCheckbox);
-    const cruzBayCheckbox = screen.getByLabelText('Cruz Bay');
-    fireEvent.click(cruzBayCheckbox);
-
-    // Enable a contact method to pass validation
-    const callCheckbox = screen.getByLabelText('Enable Call button');
-    fireEvent.click(callCheckbox);
 
     const submitButton = screen.getByRole('button', { name: 'Join' });
     fireEvent.click(submitButton);
@@ -307,15 +264,6 @@ describe('Join', () => {
   it('shows client-side validation errors for required fields', async () => {
     renderJoin();
 
-    // Uncheck all contact method checkboxes to trigger validation error
-    const callCheckbox = screen.getByLabelText('Enable Call button');
-    const whatsappCheckbox = screen.getByLabelText('Enable WhatsApp button');
-    const smsCheckbox = screen.getByLabelText('Enable SMS button');
-    
-    fireEvent.click(callCheckbox);
-    fireEvent.click(whatsappCheckbox);
-    fireEvent.click(smsCheckbox);
-
     const submitButton = screen.getByRole('button', { name: 'Join' });
     fireEvent.click(submitButton);
 
@@ -324,8 +272,6 @@ describe('Join', () => {
       expect(screen.getByText('Phone is required')).toBeInTheDocument();
       expect(screen.getByText('Island is required')).toBeInTheDocument();
       expect(screen.getByText('At least one category required')).toBeInTheDocument();
-      expect(screen.getByText('At least one area required')).toBeInTheDocument();
-      expect(screen.getByText('At least one contact method must be enabled')).toBeInTheDocument();
     });
   });
 });

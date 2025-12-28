@@ -45,7 +45,7 @@ describe('AdminProviders', () => {
       name: 'John Doe',
       phone: '123-456-7890',
       island: 'STT',
-      status: 'TODAY',
+      status: 'OPEN_NOW',
       archived: false,
       badges: ['VERIFIED'],
       is_disputed: false,
@@ -56,7 +56,7 @@ describe('AdminProviders', () => {
       name: 'Jane Smith',
       phone: '098-765-4321',
       island: 'STJ',
-      status: 'NEXT_3_DAYS',
+      status: 'BUSY_LIMITED',
       archived: true,
       badges: [],
       is_disputed: true,
@@ -150,7 +150,7 @@ describe('AdminProviders', () => {
       expect(screen.getByText('John Doe')).toBeInTheDocument();
       expect(screen.getByText('123-456-7890')).toBeInTheDocument();
       expect(screen.getAllByText('St. Thomas')).toHaveLength(2); // One in select, one in table
-      expect(screen.getByText('TODAY')).toBeInTheDocument();
+      expect(screen.getByText('OPEN_NOW')).toBeInTheDocument();
       expect(screen.getByText('VERIFIED')).toBeInTheDocument();
     });
   });
@@ -177,7 +177,7 @@ describe('AdminProviders', () => {
     renderAdminProviders();
 
     await waitFor(() => {
-      expect(fetchMock).toHaveBeenCalledTimes(4); // categories + providers (twice due to component bug)
+      expect(fetchMock).toHaveBeenCalledTimes(2); // categories + providers
     });
 
     await waitFor(() => {
@@ -186,7 +186,7 @@ describe('AdminProviders', () => {
     });
 
     await waitFor(() => {
-      expect(fetchMock).toHaveBeenCalledTimes(7); // categories + areas + providers again (twice)
+      expect(fetchMock).toHaveBeenCalledTimes(4); // categories + providers (twice due to filter change)
     });
 
     await waitFor(() => {
@@ -201,7 +201,7 @@ describe('AdminProviders', () => {
     renderAdminProviders();
 
     await waitFor(() => {
-      expect(fetchMock).toHaveBeenCalledTimes(4); // categories + providers (twice due to component bug)
+      expect(fetchMock).toHaveBeenCalledTimes(2); // categories + providers
     });
 
     // Change island filter
@@ -211,7 +211,7 @@ describe('AdminProviders', () => {
     });
 
     await waitFor(() => {
-      expect(fetchMock).toHaveBeenCalledTimes(7); // categories + areas + providers again (twice)
+      expect(fetchMock).toHaveBeenCalledTimes(4); // categories + providers (multiple times due to filter changes)
     });
 
     await waitFor(() => {

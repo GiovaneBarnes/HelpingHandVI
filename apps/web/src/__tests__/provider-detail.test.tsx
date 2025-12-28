@@ -113,9 +113,9 @@ describe('ProviderDetail', () => {
       expect(screen.queryByText('Loading...')).not.toBeInTheDocument();
     });
 
-    expect(screen.getByText('Test Provider')).toBeInTheDocument();
-    expect(screen.getByText('St. Thomas')).toBeInTheDocument();
-    expect(screen.getByText('TODAY')).toBeInTheDocument();
+    expect(screen.getByText('Test Provider')).toBeInTheDocument(); // Provider name in main detail
+    expect(screen.getAllByText('St. Thomas')).toHaveLength(1); // Only in main detail
+    expect(screen.getAllByText('TODAY')).toHaveLength(1); // Only in main detail
     expect(screen.getByText('Preferred contact: CALL')).toBeInTheDocument();
   });
 
