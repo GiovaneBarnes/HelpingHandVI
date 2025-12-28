@@ -2,6 +2,9 @@ import { render, screen, waitFor, fireEvent } from '@testing-library/react';
 import { vi } from 'vitest';
 import { ProfileForm } from './ProfileForm';
 
+// Mock fetch globally
+global.fetch = vi.fn();
+
 const mockProvider = {
   id: 1,
   name: 'Test Provider',
@@ -25,12 +28,22 @@ const mockProvider = {
   emergency_boost_eligible: false,
 };
 
+const mockCategories = [
+  { id: 1, name: 'Plumbing' },
+  { id: 2, name: 'Electrical' },
+  { id: 3, name: 'Handyman' },
+];
+
 describe('ProfileForm', () => {
   const mockOnSave = vi.fn();
   const mockOnRequestChange = vi.fn();
 
   beforeEach(() => {
     vi.clearAllMocks();
+    (global.fetch as any).mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve(mockCategories),
+    });
   });
 
   it('renders with provider data', () => {
@@ -91,6 +104,25 @@ describe('ProfileForm', () => {
     expect(screen.getByText('19/200 characters')).toBeInTheDocument();
   });
 
+  it('renders categories checkboxes', async () => {
+    render(
+      <ProfileForm
+        provider={mockProvider}
+        onSave={mockOnSave}
+        onRequestChange={mockOnRequestChange}
+      />
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText('Plumbing')).toBeInTheDocument();
+      expect(screen.getByText('Electrical')).toBeInTheDocument();
+      expect(screen.getByText('Handyman')).toBeInTheDocument();
+    });
+
+    const plumbingCheckbox = screen.getByLabelText('Plumbing');
+    expect(plumbingCheckbox).toBeChecked();
+  });
+
   it('saves changes successfully', async () => {
     mockOnSave.mockResolvedValueOnce(undefined);
 
@@ -101,6 +133,11 @@ describe('ProfileForm', () => {
         onRequestChange={mockOnRequestChange}
       />
     );
+
+    // Wait for categories to load
+    await waitFor(() => {
+      expect(screen.getByText('Plumbing')).toBeInTheDocument();
+    });
 
     const phoneInput = screen.getByDisplayValue('123-456-7890');
     fireEvent.change(phoneInput, { target: { value: '987-654-3210' } });
@@ -114,6 +151,7 @@ describe('ProfileForm', () => {
       expect(mockOnSave).toHaveBeenCalledWith({
         phone: '987-654-3210',
         description: 'Test description',
+        categories: [{ id: 1, name: 'Plumbing' }],
       });
     });
 

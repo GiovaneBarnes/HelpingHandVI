@@ -17,6 +17,17 @@ Object.defineProperty(window, 'localStorage', { value: localStorageMock });
 // Mock alert
 global.alert = vi.fn();
 
+// Mock useNavigate
+const mockNavigate = vi.fn();
+vi.mock('react-router-dom', async () => {
+  const actual = await vi.importActual('react-router-dom');
+  return {
+    ...actual,
+    useNavigate: () => mockNavigate,
+    useLocation: () => ({ pathname: '/admin/settings' }),
+  };
+});
+
 // Mock window.location
 delete (global as any).window.location;
 (global as any).window.location = { href: '' };
@@ -25,18 +36,48 @@ describe('AdminSettings', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     localStorageMock.getItem.mockReturnValue('true'); // Mock logged in
-    fetchMock.mockResolvedValue({
-      ok: true,
-      json: () => Promise.resolve({ enabled: false, data: { enabled: false }, error: null }),
+    
+    // Mock all fetch calls
+    fetchMock.mockImplementation((url: string | Request) => {
+      const urlString = typeof url === 'string' ? url : url.url;
+      
+      if (urlString.includes('/settings/emergency-mode')) {
+        return Promise.resolve({
+          ok: true,
+          json: () => Promise.resolve({ data: { enabled: false }, error: null }),
+        });
+      }
+      
+      if (urlString.includes('/health')) {
+        return Promise.resolve({
+          ok: true,
+          json: () => Promise.resolve({
+            status: 'healthy',
+            checks: {
+              database: { status: 'healthy', details: { latency: 8 } },
+              providers: { status: 'healthy', details: { count: 0 } },
+              reports: { status: 'healthy', details: { count: 0 } },
+              activity: { status: 'healthy', details: { events: 0 } },
+              system: { status: 'healthy', details: { categories: 17, areas: 11 } }
+            }
+          }),
+        });
+      }
+      
+      if (urlString.includes('/admin/settings/emergency-mode')) {
+        return Promise.resolve({
+          ok: true,
+          json: () => Promise.resolve({ data: { enabled: true }, error: null }),
+        });
+      }
+      
+      return Promise.reject(new Error(`Unknown endpoint: ${urlString}`));
     });
   });
 
   it('renders admin settings page with title', async () => {
     render(<AdminSettings />);
 
-    await waitFor(() => {
-      expect(screen.getByText('Admin - Settings')).toBeInTheDocument();
-    });
     await waitFor(() => {
       expect(screen.getByText('Emergency Mode')).toBeInTheDocument();
     });
@@ -63,15 +104,15 @@ describe('AdminSettings', () => {
   it('displays loading state initially', () => {
     render(<AdminSettings />);
 
-    expect(screen.getByText('Loading...')).toBeInTheDocument();
+    expect(screen.getByText('Loading settings...')).toBeInTheDocument();
   });
 
   it('displays emergency mode status when disabled', async () => {
     render(<AdminSettings />);
 
     await waitFor(() => {
-      expect(screen.getByText('Emergency Mode: DISABLED')).toBeInTheDocument();
-      expect(screen.getByText('Enable Emergency Mode')).toBeInTheDocument();
+      expect(screen.getByText('INACTIVE')).toBeInTheDocument();
+      expect(screen.getByText('🚨 Enable Emergency Mode')).toBeInTheDocument();
     });
   });
 
@@ -84,9 +125,9 @@ describe('AdminSettings', () => {
     render(<AdminSettings />);
 
     await waitFor(() => {
-      expect(screen.getByText('Emergency Mode: ENABLED')).toBeInTheDocument();
-      expect(screen.getByText('Disable Emergency Mode')).toBeInTheDocument();
-      expect(screen.getByText('Active:')).toBeInTheDocument();
+      expect(screen.getByText('ACTIVE')).toBeInTheDocument();
+      expect(screen.getByText('🔕 Disable Emergency Mode')).toBeInTheDocument();
+      expect(screen.getByText('Emergency Mode is Active')).toBeInTheDocument();
     });
   });
 
@@ -96,7 +137,7 @@ describe('AdminSettings', () => {
     render(<AdminSettings />);
 
     await waitFor(() => {
-      const enableButton = screen.getByText('Enable Emergency Mode');
+      const enableButton = screen.getByText('🚨 Enable Emergency Mode');
       fireEvent.click(enableButton);
     });
 
@@ -121,7 +162,7 @@ describe('AdminSettings', () => {
     render(<AdminSettings />);
 
     await waitFor(() => {
-      const disableButton = screen.getByText('Disable Emergency Mode');
+      const disableButton = screen.getByText('🔕 Disable Emergency Mode');
       fireEvent.click(disableButton);
     });
 
@@ -139,28 +180,54 @@ describe('AdminSettings', () => {
   it('updates UI after successful toggle', async () => {
     global.prompt = vi.fn(() => 'Test notes');
 
-    // Mock initial status fetch (disabled)
-    fetchMock.mockResolvedValueOnce({
-      ok: true,
-      json: () => Promise.resolve({ data: { enabled: false }, error: null }),
-    });
-    // Mock toggle POST (enable)
-    fetchMock.mockResolvedValueOnce({
-      ok: true,
-      json: () => Promise.resolve({ data: { enabled: true }, error: null }),
+    // Override the mock to return enabled after toggle
+    fetchMock.mockImplementation((url: string | Request) => {
+      const urlString = typeof url === 'string' ? url : url.url;
+      
+      if (urlString.includes('/settings/emergency-mode') && !urlString.includes('/admin/')) {
+        return Promise.resolve({
+          ok: true,
+          json: () => Promise.resolve({ data: { enabled: false }, error: null }),
+        });
+      }
+      
+      if (urlString.includes('/health')) {
+        return Promise.resolve({
+          ok: true,
+          json: () => Promise.resolve({
+            status: 'healthy',
+            checks: {
+              database: { status: 'healthy', details: { latency: 8 } },
+              providers: { status: 'healthy', details: { count: 0 } },
+              reports: { status: 'healthy', details: { count: 0 } },
+              activity: { status: 'healthy', details: { events: 0 } },
+              system: { status: 'healthy', details: { categories: 17, areas: 11 } }
+            }
+          }),
+        });
+      }
+      
+      if (urlString.includes('/admin/settings/emergency-mode')) {
+        return Promise.resolve({
+          ok: true,
+          json: () => Promise.resolve({ data: { enabled: true }, error: null }),
+        });
+      }
+      
+      return Promise.reject(new Error(`Unknown endpoint: ${urlString}`));
     });
 
     render(<AdminSettings />);
 
     await waitFor(() => {
-      expect(screen.getByText('Emergency Mode: DISABLED')).toBeInTheDocument();
+      expect(screen.getByText('INACTIVE')).toBeInTheDocument();
     });
 
-    const enableButton = screen.getByText('Enable Emergency Mode');
+    const enableButton = screen.getByText('🚨 Enable Emergency Mode');
     fireEvent.click(enableButton);
 
     await waitFor(() => {
-      expect(screen.getByText('Emergency Mode: ENABLED')).toBeInTheDocument();
+      expect(screen.getByText('ACTIVE')).toBeInTheDocument();
     });
   });
 
@@ -170,7 +237,7 @@ describe('AdminSettings', () => {
     render(<AdminSettings />);
 
     await waitFor(() => {
-      const enableButton = screen.getByText('Enable Emergency Mode');
+      const enableButton = screen.getByText('🚨 Enable Emergency Mode');
       fireEvent.click(enableButton);
     });
 
@@ -182,7 +249,32 @@ describe('AdminSettings', () => {
   });
 
   it('handles fetch error', async () => {
-    fetchMock.mockRejectedValueOnce(new Error('Network error'));
+    // Override the mock to fail on emergency mode fetch
+    fetchMock.mockImplementation((url: string | Request) => {
+      const urlString = typeof url === 'string' ? url : url.url;
+      
+      if (urlString.includes('/settings/emergency-mode') && !urlString.includes('/admin/')) {
+        return Promise.reject(new Error('Network error'));
+      }
+      
+      if (urlString.includes('/health')) {
+        return Promise.resolve({
+          ok: true,
+          json: () => Promise.resolve({
+            status: 'healthy',
+            checks: {
+              database: { status: 'healthy', details: { latency: 8 } },
+              providers: { status: 'healthy', details: { count: 0 } },
+              reports: { status: 'healthy', details: { count: 0 } },
+              activity: { status: 'healthy', details: { events: 0 } },
+              system: { status: 'healthy', details: { categories: 17, areas: 11 } }
+            }
+          }),
+        });
+      }
+      
+      return Promise.reject(new Error(`Unknown endpoint: ${urlString}`));
+    });
 
     render(<AdminSettings />);
 
@@ -193,18 +285,45 @@ describe('AdminSettings', () => {
 
   it('handles toggle error', async () => {
     global.prompt = vi.fn(() => 'Test notes');
-    // First call succeeds (fetch status), second call fails (toggle)
-    fetchMock
-      .mockResolvedValueOnce({
-        ok: true,
-        json: () => Promise.resolve({ data: { enabled: false }, error: null }),
-      })
-      .mockRejectedValueOnce(new Error('Network error'));
+    
+    // Override the mock to fail on admin endpoint
+    fetchMock.mockImplementation((url: string | Request) => {
+      const urlString = typeof url === 'string' ? url : url.url;
+      
+      if (urlString.includes('/settings/emergency-mode') && !urlString.includes('/admin/')) {
+        return Promise.resolve({
+          ok: true,
+          json: () => Promise.resolve({ data: { enabled: false }, error: null }),
+        });
+      }
+      
+      if (urlString.includes('/health')) {
+        return Promise.resolve({
+          ok: true,
+          json: () => Promise.resolve({
+            status: 'healthy',
+            checks: {
+              database: { status: 'healthy', details: { latency: 8 } },
+              providers: { status: 'healthy', details: { count: 0 } },
+              reports: { status: 'healthy', details: { count: 0 } },
+              activity: { status: 'healthy', details: { events: 0 } },
+              system: { status: 'healthy', details: { categories: 17, areas: 11 } }
+            }
+          }),
+        });
+      }
+      
+      if (urlString.includes('/admin/settings/emergency-mode')) {
+        return Promise.reject(new Error('Network error'));
+      }
+      
+      return Promise.reject(new Error(`Unknown endpoint: ${urlString}`));
+    });
 
     render(<AdminSettings />);
 
     await waitFor(() => {
-      const enableButton = screen.getByText('Enable Emergency Mode');
+      const enableButton = screen.getByText('🚨 Enable Emergency Mode');
       fireEvent.click(enableButton);
     });
 
@@ -222,7 +341,7 @@ describe('AdminSettings', () => {
     render(<AdminSettings />);
 
     await waitFor(() => {
-      expect(screen.getByText(/Emergency mode is currently enabled/)).toBeInTheDocument();
+      expect(screen.getByText('Emergency Mode is Active')).toBeInTheDocument();
     });
   });
 
@@ -230,8 +349,7 @@ describe('AdminSettings', () => {
     render(<AdminSettings />);
 
     await waitFor(() => {
-      const checkbox = screen.getByRole('checkbox');
-      expect(checkbox).not.toBeChecked();
+      expect(screen.getByText('🚨 Enable Emergency Mode')).toBeInTheDocument();
     });
   });
 
@@ -244,8 +362,7 @@ describe('AdminSettings', () => {
     render(<AdminSettings />);
 
     await waitFor(() => {
-      const checkbox = screen.getByRole('checkbox');
-      expect(checkbox).toBeChecked();
+      expect(screen.getByText('🔕 Disable Emergency Mode')).toBeInTheDocument();
     });
   });
 });

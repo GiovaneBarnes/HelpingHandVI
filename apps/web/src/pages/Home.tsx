@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Link } from 'react-router-dom';
 import { Card } from '../components/Card';
 import { Badge } from '../components/Badge';
@@ -11,13 +11,28 @@ interface Provider {
   phone: string;
   whatsapp?: string;
   island: string;
-  profile: any;
+  profile: {
+    description?: string;
+  };
   status: string;
   last_active_at: string;
   lifecycle_status: string;
   is_premium_active: boolean;
   is_trial: boolean;
   categories: string[];
+}
+
+type Filters = {
+  island: string;
+  categoryId: string;
+  status: string;
+};
+
+interface Suggestion {
+  id: string;
+  label: string;
+  description?: string;
+  patch: Partial<Record<keyof Filters, string | null>>;
 }
 
 const API_BASE = `${window.location.protocol}//${window.location.hostname}:3000`;
@@ -74,8 +89,8 @@ export const Home: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [cursor, setCursor] = useState<string | null>(null);
   const [hasMore, setHasMore] = useState(false);
-  const [suggestions, setSuggestions] = useState<any[]>([]);
-  const [filters, setFilters] = useState({
+  const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
+  const [filters, setFilters] = useState<Filters>({
     island: '',
     categoryId: '',
     status: '',
@@ -87,12 +102,6 @@ export const Home: React.FC = () => {
     fetchCategories();
     fetchEmergencyMode();
   }, []);
-
-  useEffect(() => {
-    console.log('[DEBUG] Filters changed, fetching providers:', filters);
-    fetchProviders(true);
-    fetchEmergencyMode();
-  }, [filters]);
 
   const fetchEmergencyMode = async () => {
     try {
@@ -123,7 +132,7 @@ export const Home: React.FC = () => {
     }
   };
 
-  const fetchProviders = async (reset = false) => {
+  const fetchProviders = useCallback(async (reset = false) => {
     console.log(`[DEBUG] fetchProviders called with reset=${reset}, current filters:`, filters);
     if (reset) {
       setLoading(true);
@@ -176,7 +185,13 @@ export const Home: React.FC = () => {
       setLoadingMore(false);
       console.log('[DEBUG] fetchProviders completed');
     }
-  };
+  }, [filters, cursor]);
+
+  useEffect(() => {
+    console.log('[DEBUG] Filters changed, fetching providers:', filters);
+    fetchProviders(true);
+    fetchEmergencyMode();
+  }, [filters, fetchProviders]);
 
   const handleFilterChange = (key: string, value: string) => {
     console.log(`[DEBUG] Filter change: ${key} = "${value}"`);
@@ -187,13 +202,13 @@ export const Home: React.FC = () => {
     });
   };
 
-  const applySuggestion = (patch: any) => {
+  const applySuggestion = (patch: Partial<Record<keyof Filters, string | null>>) => {
     const newFilters = { ...filters };
     Object.keys(patch).forEach(key => {
-      if (patch[key] === null) {
-        newFilters[key as keyof typeof newFilters] = '';
+      if (patch[key as keyof Filters] === null) {
+        newFilters[key as keyof Filters] = '';
       } else {
-        newFilters[key as keyof typeof newFilters] = patch[key];
+        newFilters[key as keyof Filters] = patch[key as keyof Filters] as string;
       }
     });
     setFilters(newFilters);

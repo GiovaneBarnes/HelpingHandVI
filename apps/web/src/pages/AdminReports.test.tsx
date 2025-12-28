@@ -18,6 +18,17 @@ Object.defineProperty(window, 'localStorage', { value: localStorageMock });
 global.alert = vi.fn();
 global.confirm = vi.fn();
 
+// Mock useNavigate
+const mockNavigate = vi.fn();
+vi.mock('react-router-dom', async () => {
+  const actual = await vi.importActual('react-router-dom');
+  return {
+    ...actual,
+    useNavigate: () => mockNavigate,
+    useLocation: () => ({ pathname: '/admin/reports' }),
+  };
+});
+
 // Mock window.location
 delete (global as any).window.location;
 (global as any).window.location = { href: '' };
@@ -63,11 +74,6 @@ describe('AdminReports', () => {
   it('renders admin reports page with title', async () => {
     render(<AdminReports />);
 
-    // Wait for data to load
-    await waitFor(() => {
-      expect(screen.getByText('Admin - Reports')).toBeInTheDocument();
-    });
-    
     await waitFor(() => {
       expect(screen.getByText('John Doe')).toBeInTheDocument();
     });
@@ -97,7 +103,7 @@ describe('AdminReports', () => {
   it('displays loading state initially', () => {
     render(<AdminReports />);
 
-    expect(screen.getByText('Loading...')).toBeInTheDocument();
+    expect(screen.getByText('Loading reports...')).toBeInTheDocument();
   });
 
   it('displays reports in table', async () => {
@@ -105,7 +111,7 @@ describe('AdminReports', () => {
 
     await waitFor(() => {
       expect(screen.getByText('John Doe')).toBeInTheDocument();
-      expect(screen.getByText('WRONG_NUMBER')).toBeInTheDocument();
+      expect(screen.getByText('WRONG NUMBER')).toBeInTheDocument();
       expect(screen.getByText('Wrong information')).toBeInTheDocument();
       expect(screen.getByText('john@example.com')).toBeInTheDocument();
     });

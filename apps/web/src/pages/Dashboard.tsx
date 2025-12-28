@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useParams, useSearchParams } from 'react-router-dom';
 import { Card } from '../components/Card';
 import { Button } from '../components/Button';
@@ -62,13 +62,7 @@ export const Dashboard: React.FC = () => {
   const [availableAreas, setAvailableAreas] = useState<Array<{ id: number; name: string }>>([]);
   const [status, setStatus] = useState('');
 
-  useEffect(() => {
-    if (providerId) {
-      fetchProvider();
-    }
-  }, [providerId]);
-
-  const fetchProvider = async () => {
+  const fetchProvider = useCallback(async () => {
     setLoading(true);
     try {
       const response = await fetch(`${API_BASE}/providers/${providerId}`);
@@ -81,7 +75,7 @@ export const Dashboard: React.FC = () => {
         whatsapp: data.whatsapp || '',
         island: data.island,
         categories: [], // Would need to fetch from joins
-        areas: data.areas?.map((a: any) => a.id) || [],
+        areas: data.areas?.map((a: { id: number }) => a.id) || [],
         contact_call_enabled: data.contact_call_enabled ?? true,
         contact_whatsapp_enabled: data.contact_whatsapp_enabled ?? true,
         contact_sms_enabled: data.contact_sms_enabled ?? true,
@@ -98,7 +92,13 @@ export const Dashboard: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [providerId]);
+
+  useEffect(() => {
+    if (providerId) {
+      fetchProvider();
+    }
+  }, [providerId, fetchProvider]);
 
   const fetchAreas = async (island: string) => {
     try {

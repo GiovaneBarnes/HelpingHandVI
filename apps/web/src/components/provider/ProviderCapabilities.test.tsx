@@ -127,10 +127,12 @@ describe('ProviderCapabilities', () => {
     });
 
     it('displays trial information when user is on trial', () => {
-      render(<ProviderCapabilities provider={mockProvider} />);
+      const trialProvider = { ...mockProvider, is_premium_active: true };
+      render(<ProviderCapabilities provider={trialProvider} />);
 
-      expect(screen.getByText('Trial Remaining:')).toBeInTheDocument();
-      expect(screen.getByText('30 days')).toBeInTheDocument();
+      expect(screen.getByText('Trial Expires:')).toBeInTheDocument();
+      // The countdown shows calculated time (e.g., "30d 0h" for 30 days)
+      expect(screen.getByText(/30d 0h/)).toBeInTheDocument();
     });
 
     it('does not display trial information when user is not on trial', () => {
@@ -153,6 +155,48 @@ describe('ProviderCapabilities', () => {
       render(<ProviderCapabilities provider={notEligibleProvider} />);
 
       expect(screen.getByText('No')).toBeInTheDocument();
+    });
+
+    it('displays premium expiration countdown for trial users', () => {
+      const trialProvider = {
+        ...mockProvider,
+        is_premium_active: true,
+        plan_source: 'TRIAL' as const,
+        trial_end_at: new Date(Date.now() + 5 * 24 * 60 * 60 * 1000).toISOString(), // 5 days from now
+      };
+      render(<ProviderCapabilities provider={trialProvider} />);
+
+      expect(screen.getByText('Trial Expires:')).toBeInTheDocument();
+      // The countdown will show something like "5d 0h" or similar
+      expect(screen.getByText(/^\d+d \d+h$|^\d+ days$/)).toBeInTheDocument();
+    });
+
+    it('displays premium expiration countdown for paid users', () => {
+      const paidProvider = {
+        ...mockProvider,
+        is_premium_active: true,
+        plan_source: 'PAID' as const,
+        trial_end_at: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(), // 30 days from now
+        is_trial: false, // Override the mockProvider's is_trial
+      };
+      render(<ProviderCapabilities provider={paidProvider} />);
+
+      expect(screen.getByText('Premium Expires:')).toBeInTheDocument();
+      // The countdown will update asynchronously
+    });
+
+    it('displays permanent access for premium users without expiration', () => {
+      const permanentProvider = {
+        ...mockProvider,
+        is_premium_active: true,
+        plan_source: 'ADMIN' as const,
+        trial_end_at: undefined,
+        is_trial: false, // Override the mockProvider's is_trial
+      };
+      render(<ProviderCapabilities provider={permanentProvider} />);
+
+      expect(screen.getByText('Access Status:')).toBeInTheDocument();
+      expect(screen.getByText('Permanent')).toBeInTheDocument();
     });
   });
 

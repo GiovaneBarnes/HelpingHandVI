@@ -96,9 +96,22 @@ const ProviderDashboard: React.FC = () => {
   const handleRequestChange = async (field: 'name' | 'island', newValue: string, reason: string) => {
     if (!provider) return;
     try {
-      // In a real implementation, this would call an API endpoint to create a change request
-      alert(`Change request submitted for ${field}: "${newValue}"\nReason: ${reason}\n\nThis would be sent to admin for approval.`);
+      const API_BASE = `${window.location.protocol}//${window.location.hostname}:3000`;
+      const response = await fetch(`${API_BASE}/providers/${provider.id}/change-requests`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ field, requested_value: newValue, reason }),
+      });
+
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.error || 'Failed to submit change request');
+      }
+
+      await response.json();
+      alert('Change request submitted successfully! An admin will review it shortly.');
     } catch (err) {
+      console.error('Error submitting change request:', err);
       throw new Error('Failed to submit change request');
     }
   };

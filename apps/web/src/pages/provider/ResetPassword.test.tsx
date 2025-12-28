@@ -36,6 +36,11 @@ describe('ResetPassword', () => {
     expect(screen.getByText('Reset password')).toBeInTheDocument();
   });
 
+  it('renders header with HelpingHand branding for valid token', () => {
+    renderComponent();
+    expect(screen.getByText('HelpingHandVI')).toBeInTheDocument();
+  });
+
   it('shows invalid link message when no token provided', () => {
     render(
       <MemoryRouter initialEntries={['/reset-password']}>
@@ -43,6 +48,15 @@ describe('ResetPassword', () => {
       </MemoryRouter>
     );
     expect(screen.getByText('Invalid Reset Link')).toBeInTheDocument();
+  });
+
+  it('renders header with HelpingHand branding for invalid token', () => {
+    render(
+      <MemoryRouter initialEntries={['/reset-password']}>
+        <ResetPassword />
+      </MemoryRouter>
+    );
+    expect(screen.getByText('HelpingHandVI')).toBeInTheDocument();
   });
 
   it('submits the form successfully', async () => {

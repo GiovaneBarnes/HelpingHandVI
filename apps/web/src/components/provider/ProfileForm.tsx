@@ -1,5 +1,10 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Provider } from '../../services/providerApi';
+
+interface Category {
+  id: number;
+  name: string;
+}
 
 interface ProfileFormProps {
   provider: Provider;
@@ -10,6 +15,8 @@ interface ProfileFormProps {
 export const ProfileForm: React.FC<ProfileFormProps> = ({ provider, onSave, onRequestChange }) => {
   const [phone, setPhone] = useState(provider.phone);
   const [description, setDescription] = useState(provider.description);
+  const [selectedCategories, setSelectedCategories] = useState<number[]>(provider.categories.map(c => c.id));
+  const [availableCategories, setAvailableCategories] = useState<Category[]>([]);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState('');
   const [showRequestModal, setShowRequestModal] = useState(false);
@@ -18,11 +25,33 @@ export const ProfileForm: React.FC<ProfileFormProps> = ({ provider, onSave, onRe
   const [requestReason, setRequestReason] = useState('');
   const [requesting, setRequesting] = useState(false);
 
+  const API_BASE = `${window.location.protocol}//${window.location.hostname}:3000`;
+
+  useEffect(() => {
+    const fetchCategories = async () => {
+      try {
+        const response = await fetch(`${API_BASE}/categories`);
+        if (response.ok) {
+          const categories = await response.json();
+          setAvailableCategories(categories);
+        }
+      } catch (err) {
+        console.error('Error fetching categories:', err);
+      }
+    };
+
+    fetchCategories();
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
   const handleSave = async () => {
     setSaving(true);
     setMessage('');
     try {
-      await onSave({ phone, description });
+      // Create categories array from selected IDs and available categories
+      const categories = availableCategories
+        .filter(cat => selectedCategories.includes(cat.id))
+        .map(cat => ({ id: cat.id, name: cat.name }));
+      await onSave({ phone, description, categories });
       setMessage('Profile updated successfully');
     } catch (err) {
       setMessage('Failed to update profile');
@@ -105,6 +134,29 @@ export const ProfileForm: React.FC<ProfileFormProps> = ({ provider, onSave, onRe
           className="mt-1 block w-full border-gray-300 rounded-md shadow-sm"
         />
         <p className="text-sm text-gray-500">{description.length}/200 characters</p>
+      </div>
+      <div>
+        <label className="block text-sm font-medium text-gray-700 mb-2">Categories</label>
+        <p className="text-xs text-gray-600 mb-3">Select the categories that best describe your services</p>
+        <div className="grid grid-cols-2 gap-2">
+          {availableCategories.map(category => (
+            <label key={category.id} className="flex items-center">
+              <input
+                type="checkbox"
+                checked={selectedCategories.includes(category.id)}
+                onChange={(e) => {
+                  if (e.target.checked) {
+                    setSelectedCategories([...selectedCategories, category.id]);
+                  } else {
+                    setSelectedCategories(selectedCategories.filter(id => id !== category.id));
+                  }
+                }}
+                className="mr-2"
+              />
+              <span className="text-sm">{category.name}</span>
+            </label>
+          ))}
+        </div>
       </div>
       <button
         onClick={handleSave}

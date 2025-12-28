@@ -26,6 +26,11 @@ describe('ForgotPassword', () => {
     expect(screen.getByText('Send reset link')).toBeInTheDocument();
   });
 
+  it('renders header with HelpingHand branding', () => {
+    renderComponent();
+    expect(screen.getByText('HelpingHandVI')).toBeInTheDocument();
+  });
+
   it('submits the form successfully', async () => {
     mockFetch.mockResolvedValueOnce({
       ok: true,

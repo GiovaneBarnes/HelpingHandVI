@@ -11,7 +11,9 @@ interface Provider {
   phone: string;
   whatsapp?: string;
   island: string;
-  profile: any;
+  profile: {
+    description?: string;
+  };
   status: string;
   last_active_at: string;
   plan: string;

@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { Provider } from '../../services/providerApi';
 import { Badge } from '../Badge';
 import { Card } from '../Card';
@@ -32,6 +32,94 @@ const getLifecycleStatusColor = (status: string) => {
     case 'SUSPENDED': return 'error';
     default: return 'secondary';
   }
+};
+
+const PremiumCountdown: React.FC<{ provider: Provider }> = ({ provider }) => {
+  const [timeLeft, setTimeLeft] = useState<string>('');
+
+  useEffect(() => {
+    const calculateTimeLeft = () => {
+      let endDate: Date | null = null;
+      
+      if (provider.trial_end_at) {
+        endDate = new Date(provider.trial_end_at);
+      } else if (provider.is_trial && provider.trial_days_left > 0) {
+        // Estimate end date from trial_days_left
+        endDate = new Date(Date.now() + provider.trial_days_left * 24 * 60 * 60 * 1000);
+      }
+      
+      if (!endDate) return;
+      
+      const now = new Date();
+      const diffMs = endDate.getTime() - now.getTime();
+
+      if (diffMs <= 0) {
+        setTimeLeft('Expired');
+        return;
+      }
+
+      const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+      const diffHours = Math.floor((diffMs % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+      const diffMinutes = Math.floor((diffMs % (1000 * 60 * 60)) / (1000 * 60));
+
+      if (diffDays > 0) {
+        setTimeLeft(`${diffDays}d ${diffHours}h`);
+      } else if (diffHours > 0) {
+        setTimeLeft(`${diffHours}h ${diffMinutes}m`);
+      } else {
+        setTimeLeft(`${diffMinutes}m`);
+      }
+    };
+
+    calculateTimeLeft();
+    const timer = setInterval(calculateTimeLeft, 60000); // Update every minute
+
+    return () => clearInterval(timer);
+  }, [provider.trial_end_at, provider.trial_days_left, provider.is_trial]);
+
+  if (!provider.is_premium_active) {
+    return null;
+  }
+
+  // For trial users, show countdown
+  if (provider.is_trial) {
+    const isExpiringSoon = provider.trial_days_left <= 7;
+    const isExpired = timeLeft === 'Expired';
+
+    return (
+      <div className="flex items-center justify-between">
+        <span className="text-sm text-gray-600">Trial Expires:</span>
+        <Badge
+          label={timeLeft || `${provider.trial_days_left} days`}
+          variant={isExpired ? 'error' : isExpiringSoon ? 'warning' : 'secondary'}
+        />
+      </div>
+    );
+  }
+
+  // For paid/admin users, show status if they have expiration
+  if (provider.trial_end_at) {
+    const isExpiringSoon = provider.trial_days_left <= 7;
+    const isExpired = timeLeft === 'Expired';
+
+    return (
+      <div className="flex items-center justify-between">
+        <span className="text-sm text-gray-600">Premium Expires:</span>
+        <Badge
+          label={timeLeft}
+          variant={isExpired ? 'error' : isExpiringSoon ? 'warning' : 'secondary'}
+        />
+      </div>
+    );
+  }
+
+  // For permanent premium access
+  return (
+    <div className="flex items-center justify-between">
+      <span className="text-sm text-gray-600">Access Status:</span>
+      <Badge label="Permanent" variant="success" />
+    </div>
+  );
 };
 
 export const ProviderCapabilities: React.FC<ProviderCapabilitiesProps> = ({ provider }) => {
@@ -75,11 +163,8 @@ export const ProviderCapabilities: React.FC<ProviderCapabilitiesProps> = ({ prov
             />
           </div>
 
-          {provider.is_trial && (
-            <div className="flex items-center justify-between">
-              <span className="text-sm text-gray-600">Trial Remaining:</span>
-              <Badge label={`${provider.trial_days_left} days`} variant="warning" />
-            </div>
+          {provider.is_premium_active && (
+            <PremiumCountdown provider={provider} />
           )}
 
           <div className="flex items-center justify-between">

@@ -21,11 +21,11 @@ const MOCK_PROVIDER: Provider = {
   lifecycle_status: 'ACTIVE',
   is_disputed: false,
   plan: 'PREMIUM',
-  plan_source: 'PAID',
-  trial_end_at: undefined,
+  plan_source: 'TRIAL',
+  trial_end_at: new Date(Date.now() + 5 * 24 * 60 * 60 * 1000).toISOString(), // 5 days from now
   is_premium_active: true,
-  trial_days_left: 0,
-  is_trial: false,
+  trial_days_left: 5,
+  is_trial: true,
   emergency_boost_eligible: true,
 };
 
@@ -38,12 +38,8 @@ class MockProviderApi {
   async login(email: string, password: string): Promise<{ token: string }> {
     // Check if using Firebase auth
     if (USE_FIREBASE_AUTH) {
-      try {
-        const firebaseUser = await firebaseAuth.signIn(email, password);
-        return { token: `firebase_${firebaseUser.uid}` };
-      } catch (error) {
-        throw error;
-      }
+      const firebaseUser = await firebaseAuth.signIn(email, password);
+      return { token: `firebase_${firebaseUser.uid}` };
     }
 
     // Fallback to mock auth

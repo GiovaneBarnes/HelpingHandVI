@@ -42,6 +42,11 @@ describe('ProviderLogin', () => {
     expect(screen.getByRole('button', { name: 'Sign in' })).toBeInTheDocument();
   });
 
+  it('renders header with HelpingHand branding', () => {
+    renderLogin();
+    expect(screen.getByText('HelpingHandVI')).toBeInTheDocument();
+  });
+
   it('shows error on invalid credentials', async () => {
     renderLogin();
     fireEvent.change(screen.getByLabelText('Email address'), { target: { value: 'wrong@example.com' } });

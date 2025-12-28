@@ -70,7 +70,7 @@ export const LivePreviewCard: React.FC<LivePreviewCardProps> = ({ provider }) =>
       <p className="text-gray-600 mb-2">{getIslandDisplayName(provider.island)}</p>
       {provider.categories && provider.categories.length > 0 && (
         <p className="text-sm text-gray-500 mb-2">
-          {provider.categories.map((c: any) => typeof c === 'string' ? c : c.name).join(', ')}
+          {provider.categories.map((c) => c.name).join(', ')}
         </p>
       )}
       <Badge label={provider.status} variant={getAvailabilityColor(provider.status)} className="mb-2" />

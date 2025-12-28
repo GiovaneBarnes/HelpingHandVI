@@ -107,7 +107,8 @@ describe('AdminProviders', () => {
     renderAdminProviders();
 
     await waitFor(() => {
-      expect(screen.getByText('Admin - Providers')).toBeInTheDocument();
+      const titleElement = screen.getByRole('heading', { level: 2, name: 'Providers' });
+      expect(titleElement).toBeInTheDocument();
     });
     await waitFor(() => {
       // Check for provider in table, not in dropdown
@@ -140,7 +141,7 @@ describe('AdminProviders', () => {
   it('displays loading state initially', () => {
     renderAdminProviders();
 
-    expect(screen.getByText('Loading...')).toBeInTheDocument();
+    expect(screen.getByText('Loading providers...')).toBeInTheDocument();
   });
 
   it('displays providers in table', async () => {
@@ -150,7 +151,7 @@ describe('AdminProviders', () => {
       expect(screen.getByText('John Doe')).toBeInTheDocument();
       expect(screen.getByText('123-456-7890')).toBeInTheDocument();
       expect(screen.getAllByText('St. Thomas')).toHaveLength(2); // One in select, one in table
-      expect(screen.getByText('OPEN_NOW')).toBeInTheDocument();
+      expect(screen.getByText('OPEN NOW')).toBeInTheDocument();
       expect(screen.getByText('VERIFIED')).toBeInTheDocument();
     });
   });
@@ -159,8 +160,9 @@ describe('AdminProviders', () => {
     renderAdminProviders();
 
     await waitFor(() => {
-      expect(screen.getByText('No')).toBeInTheDocument(); // John Doe not archived
-      expect(screen.getByText('Yes')).toBeInTheDocument(); // Jane Smith archived
+      // Jane Smith should have archived badge
+      const archivedBadges = screen.getAllByText('Archived');
+      expect(archivedBadges.length).toBeGreaterThan(0);
     });
   });
 
@@ -303,10 +305,10 @@ describe('AdminProviders', () => {
     renderAdminProviders();
 
     await waitFor(() => {
-      expect(screen.getByText('Mark Disputed')).toBeInTheDocument();
+      expect(screen.getByText('Flag')).toBeInTheDocument();
     });
 
-    const disputeButton = screen.getByText('Mark Disputed');
+    const disputeButton = screen.getByText('Flag');
     fireEvent.click(disputeButton);
 
     await waitFor(() => {
@@ -326,10 +328,10 @@ describe('AdminProviders', () => {
     renderAdminProviders();
 
     await waitFor(() => {
-      expect(screen.getByText('Unmark Disputed')).toBeInTheDocument();
+      expect(screen.getByText('Resolve')).toBeInTheDocument();
     });
 
-    const undisputeButton = screen.getByText('Unmark Disputed');
+    const undisputeButton = screen.getByText('Resolve');
     fireEvent.click(undisputeButton);
 
     await waitFor(() => {
@@ -390,7 +392,7 @@ describe('AdminProviders', () => {
     renderAdminProviders();
 
     await waitFor(() => {
-      const disputeButton = screen.getByText('Mark Disputed');
+      const disputeButton = screen.getByText('Flag');
       fireEvent.click(disputeButton);
     });
 
@@ -516,7 +518,7 @@ describe('AdminProviders', () => {
       expect(tableRows.length).toBeGreaterThan(0);
     });
 
-    const disputedButton = screen.getAllByText('Mark Disputed')[0];
+    const disputedButton = screen.getAllByText('Flag')[0];
     fireEvent.click(disputedButton);
 
     await waitFor(() => {
