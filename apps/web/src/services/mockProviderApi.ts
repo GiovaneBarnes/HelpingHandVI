@@ -1,33 +1,9 @@
+import { API_BASE } from '../constants';
 import { Provider, Insights } from './providerApi';
 import { firebaseAuth } from './firebaseAuth';
 
 // Use Firebase Auth or custom backend
 const USE_FIREBASE_AUTH = import.meta.env.VITE_USE_FIREBASE_AUTH === 'true';
-
-const MOCK_PROVIDER: Provider = {
-  id: 1,
-  name: 'John Doe',
-  island: 'STT',
-  phone: '123-456-7890',
-  description: 'Experienced handyman with 10 years of experience.',
-  status: 'OPEN_NOW',
-  last_active_at: new Date().toISOString(),
-  categories: [{ id: 1, name: 'Handyman' }],
-  areas: [{ id: 1, name: 'Charlotte Amalie' }],
-  badges: [{ type: 'PREMIUM' }],
-  updated_at: new Date().toISOString(),
-  // Trust system and capabilities
-  trust_tier: 2, // Verified
-  lifecycle_status: 'ACTIVE',
-  is_disputed: false,
-  plan: 'PREMIUM',
-  plan_source: 'TRIAL',
-  trial_end_at: new Date(Date.now() + 5 * 24 * 60 * 60 * 1000).toISOString(), // 5 days from now
-  is_premium_active: true,
-  trial_days_left: 5,
-  is_trial: true,
-  emergency_boost_eligible: true,
-};
 
 const MOCK_INSIGHTS: Insights = {
   calls: 15,
@@ -39,7 +15,7 @@ class MockProviderApi {
     // Check if using Firebase auth
     if (USE_FIREBASE_AUTH) {
       const firebaseUser = await firebaseAuth.signIn(email, password);
-      return { token: `firebase_${firebaseUser.uid}` };
+      return { token: firebaseUser.idToken };
     }
 
     // Fallback to mock auth
@@ -69,32 +45,67 @@ class MockProviderApi {
   }
 
   async getMe(): Promise<Provider> {
-    return new Promise((resolve) => {
-      setTimeout(() => {
-        const stored = localStorage.getItem('mock_provider');
-        resolve(stored ? JSON.parse(stored) : MOCK_PROVIDER);
-      }, 500);
+    const token = localStorage.getItem('provider_token');
+    if (!token) {
+      throw new Error('No token found');
+    }
+    
+    const response = await fetch(`${API_BASE}/me`, {
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json'
+      }
     });
+    
+    if (!response.ok) {
+      throw new Error('Failed to fetch provider data');
+    }
+    
+    return response.json();
   }
 
   async updateStatus(status: Provider['status']): Promise<Provider> {
-    return new Promise((resolve) => {
-      setTimeout(() => {
-        const provider = { ...MOCK_PROVIDER, status, updated_at: new Date().toISOString() };
-        localStorage.setItem('mock_provider', JSON.stringify(provider));
-        resolve(provider);
-      }, 500);
+    const token = localStorage.getItem('provider_token');
+    if (!token) {
+      throw new Error('No token found');
+    }
+    
+    const response = await fetch(`${API_BASE}/me/status`, {
+      method: 'PUT',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ status })
     });
+    
+    if (!response.ok) {
+      throw new Error('Failed to update status');
+    }
+    
+    return response.json();
   }
 
   async updateProfile(profile: Partial<Pick<Provider, 'phone' | 'description' | 'categories' | 'areas'>>): Promise<Provider> {
-    return new Promise((resolve) => {
-      setTimeout(() => {
-        const provider = { ...MOCK_PROVIDER, ...profile, updated_at: new Date().toISOString() };
-        localStorage.setItem('mock_provider', JSON.stringify(provider));
-        resolve(provider);
-      }, 500);
+    const token = localStorage.getItem('provider_token');
+    if (!token) {
+      throw new Error('No token found');
+    }
+    
+    const response = await fetch(`${API_BASE}/me/profile`, {
+      method: 'PUT',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(profile)
     });
+    
+    if (!response.ok) {
+      throw new Error('Failed to update profile');
+    }
+    
+    return response.json();
   }
 
   async heartbeat(): Promise<{ ok: boolean; last_active_at: string }> {

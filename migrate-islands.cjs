@@ -1,6 +1,13 @@
 const { Pool } = require('pg');
 require('dotenv').config();
 
+// PRODUCTION SAFETY CHECK
+if (process.env.NODE_ENV === 'production') {
+  console.error('❌ ERROR: This script modifies existing data and should NEVER be run in production!');
+  console.error('This script is for development/testing only.');
+  process.exit(1);
+}
+
 async function migrateIslands() {
   const pool = new Pool();
   try {

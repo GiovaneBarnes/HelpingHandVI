@@ -3,6 +3,7 @@ import { useParams, useSearchParams } from 'react-router-dom';
 import { Card } from '../components/Card';
 import { Button } from '../components/Button';
 import { Badge } from '../components/Badge';
+import { API_BASE } from '../constants';
 
 interface Provider {
   id: number;
@@ -26,8 +27,6 @@ interface Provider {
   typical_hours?: string;
   emergency_calls_accepted: boolean;
 }
-
-const API_BASE = `${window.location.protocol}//${window.location.hostname}:3000`;
 
 const getAvailabilityColor = (status: string) => {
   switch (status) {

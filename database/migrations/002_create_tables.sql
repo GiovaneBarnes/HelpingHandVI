@@ -6,7 +6,7 @@ CREATE TABLE providers (
     whatsapp VARCHAR(20),
     island VARCHAR(100) NOT NULL,
     profile JSONB,
-    status availability_status DEFAULT 'UNAVAILABLE',
+    status availability_status DEFAULT 'NOT_TAKING_WORK',
     last_updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );

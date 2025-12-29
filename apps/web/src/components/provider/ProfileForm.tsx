@@ -44,6 +44,23 @@ export const ProfileForm: React.FC<ProfileFormProps> = ({ provider, onSave, onRe
     fetchCategories();
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Update form fields when provider prop changes
+  useEffect(() => {
+    setSelectedCategories(provider.categories.map(c => c.id));
+  }, [provider.categories]);
+
+  useEffect(() => {
+    setPhone(provider.phone);
+  }, [provider.phone]);
+
+  useEffect(() => {
+    setDescription(provider.description);
+  }, [provider.description]);
+
+  useEffect(() => {
+    setContactPreference(provider.contact_preference || 'BOTH');
+  }, [provider.contact_preference]);
+
   const handleSave = async () => {
     setSaving(true);
     setMessage('');

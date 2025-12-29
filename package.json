@@ -1,7 +1,9 @@
 {
   "name": "helpinghand-monorepo",
   "private": true,
-  "workspaces": ["apps/*"],
+  "workspaces": [
+    "apps/*"
+  ],
   "scripts": {
     "test": "pnpm --filter api test && pnpm --filter web test",
     "test:coverage": "pnpm --filter api test:coverage && pnpm --filter web test:coverage"
@@ -13,5 +15,8 @@
     "eslint-config-prettier": "^9.1.0",
     "eslint-plugin-prettier": "^5.1.3",
     "prettier": "^3.2.5"
+  },
+  "dependencies": {
+    "firebase-admin": "^13.6.0"
   }
 }

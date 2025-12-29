@@ -22,7 +22,12 @@ const migrations = [
   '010_add_admin_governance.sql',
   '011_add_plan_source.sql',
   '012_update_availability_status.sql',
-  '013_add_authentication.sql'
+  '013_add_authentication.sql',
+  '014_add_report_status.sql',
+  '015_add_change_requests.sql',
+  '016_add_change_request_audit.sql',
+  '017_add_contact_preference.sql',
+  '018_add_firebase_uid.sql'
 ];
 
 const seeds = [

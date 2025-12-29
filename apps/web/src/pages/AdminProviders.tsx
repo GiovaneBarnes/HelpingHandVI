@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { Button } from '../components/Button';
 import { Badge } from '../components/Badge';
 import { AdminLayout } from '../components/AdminLayout';
+import { API_BASE } from '../constants';
 
 interface Provider {
   id: number;
@@ -16,7 +17,6 @@ interface Provider {
   disputed_at: string | null;
 }
 
-const API_BASE = `${window.location.protocol}//${window.location.hostname}:3000`;
 const ADMIN_KEY = 'admin-secret'; // In real app, from env
 
 const getIslandDisplayName = (islandCode: string) => {

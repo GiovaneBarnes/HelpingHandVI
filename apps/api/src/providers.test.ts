@@ -36,7 +36,8 @@ describe('GET /providers', () => {
       INSERT INTO categories (id, name) VALUES
       (1, 'Electrician'),
       (2, 'Plumber'),
-      (3, 'AC Technician')
+      (3, 'AC Technician'),
+      (4, 'Beauty Services')
     `);
 
     // Insert test areas
@@ -98,7 +99,7 @@ describe('GET /providers', () => {
   test('sorts by trust score: badges + plan + lifecycle', async () => {
     const result = await client.query(`
       SELECT p.*,
-             (SELECT MAX(created_at) FROM activity_events WHERE provider_id = p.id) as last_active_at,
+             (SELECT COALESCE(MAX(created_at), p.created_at) FROM activity_events WHERE provider_id = p.id) as last_active_at,
              CASE
                WHEN EXISTS (SELECT 1 FROM provider_badges WHERE provider_id = p.id AND badge = 'GOV_APPROVED') THEN 300
                WHEN EXISTS (SELECT 1 FROM provider_badges WHERE provider_id = p.id AND badge = 'EMERGENCY_READY') THEN 200
@@ -111,7 +112,7 @@ describe('GET /providers', () => {
       FROM providers p
       WHERE p.lifecycle_status != 'ARCHIVED'
       ORDER BY trust_score DESC,
-               (SELECT MAX(created_at) FROM activity_events WHERE provider_id = p.id) DESC NULLS LAST,
+               (SELECT COALESCE(MAX(created_at), p.created_at) FROM activity_events WHERE provider_id = p.id) DESC,
                p.status_last_updated_at DESC,
                p.id ASC
     `);

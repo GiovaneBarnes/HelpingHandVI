@@ -9,6 +9,7 @@ export interface Provider {
   name: string;
   island: string;
   phone: string;
+  email?: string;
   description: string;
   status: 'OPEN_NOW' | 'BUSY_LIMITED' | 'NOT_TAKING_WORK';
   last_active_at: string;

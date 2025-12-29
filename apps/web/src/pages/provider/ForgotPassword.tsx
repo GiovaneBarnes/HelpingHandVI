@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { Link } from 'react-router-dom';
+import { firebaseAuth } from '../../services/firebaseAuth';
 
 const ForgotPassword: React.FC = () => {
   const [email, setEmail] = useState('');
@@ -14,20 +15,10 @@ const ForgotPassword: React.FC = () => {
     setMessage('');
 
     try {
-      const response = await fetch(`${window.location.protocol}//${window.location.hostname}:3000/forgot-password`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email }),
-      });
-
-      if (response.ok) {
-        setMessage('If an account with that email exists, we have sent you a password reset link.');
-      } else {
-        const data = await response.json();
-        setError(data.error || 'An error occurred');
-      }
+      await firebaseAuth.sendPasswordResetEmail(email);
+      setMessage('If an account with that email exists, we have sent you a password reset link.');
     } catch (err) {
-      setError('Network error. Please try again.');
+      setError(err instanceof Error ? err.message : 'An error occurred');
     } finally {
       setLoading(false);
     }

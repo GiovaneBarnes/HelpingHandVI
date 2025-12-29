@@ -91,8 +91,27 @@ export const LivePreviewCard: React.FC<LivePreviewCardProps> = ({ provider }) =>
         <p className="text-sm text-gray-700 mb-4 line-clamp-2">{provider.description}</p>
       )}
       <div className="flex space-x-2 opacity-50">
-        <button className="px-4 py-2 bg-blue-600 text-white rounded" disabled>Call</button>
-        <button className="px-4 py-2 bg-gray-600 text-white rounded" disabled>SMS</button>
+        {(provider.contact_preference === 'PHONE' || provider.contact_preference === 'BOTH') && (
+          <button 
+            className="px-4 py-2 rounded bg-blue-600 text-white"
+          >
+            Call
+          </button>
+        )}
+        {(provider.contact_preference === 'PHONE' || provider.contact_preference === 'BOTH') && (
+          <button 
+            className="px-4 py-2 rounded bg-gray-600 text-white"
+          >
+            SMS
+          </button>
+        )}
+        {(provider.contact_preference === 'EMAIL' || provider.contact_preference === 'BOTH') && provider.email && (
+          <button 
+            className="px-4 py-2 rounded bg-green-600 text-white"
+          >
+            Email
+          </button>
+        )}
       </div>
     </Card>
   );

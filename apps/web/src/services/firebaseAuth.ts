@@ -15,16 +15,19 @@ export interface AuthUser {
   email: string | null;
   displayName: string | null;
   emailVerified: boolean;
+  idToken: string;
 }
 
 export class FirebaseAuthService {
   // Convert Firebase User to our AuthUser interface
-  private toAuthUser(user: User): AuthUser {
+  private async toAuthUser(user: User): Promise<AuthUser> {
+    const idToken = await user.getIdToken();
     return {
       uid: user.uid,
       email: user.email,
       displayName: user.displayName,
       emailVerified: user.emailVerified,
+      idToken,
     };
   }
 
@@ -76,15 +79,15 @@ export class FirebaseAuthService {
   }
 
   // Get current user
-  getCurrentUser(): AuthUser | null {
+  async getCurrentUser(): Promise<AuthUser | null> {
     const user = auth.currentUser;
-    return user ? this.toAuthUser(user) : null;
+    return user ? await this.toAuthUser(user) : null;
   }
 
   // Listen to auth state changes
   onAuthStateChanged(callback: (user: AuthUser | null) => void): () => void {
-    return onAuthStateChanged(auth, (user) => {
-      callback(user ? this.toAuthUser(user) : null);
+    return onAuthStateChanged(auth, async (user) => {
+      callback(user ? await this.toAuthUser(user) : null);
     });
   }
 

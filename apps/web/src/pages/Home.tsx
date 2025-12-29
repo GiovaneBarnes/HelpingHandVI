@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { Card } from '../components/Card';
 import { Badge } from '../components/Badge';
@@ -10,6 +10,7 @@ interface Provider {
   name: string;
   phone: string;
   whatsapp?: string;
+  email?: string;
   island: string;
   profile: {
     description?: string;
@@ -37,7 +38,7 @@ interface Suggestion {
   patch: Partial<Record<keyof Filters, string | null>>;
 }
 
-const API_BASE = `${window.location.protocol}//${window.location.hostname}:3000`;
+import { API_BASE } from '../constants';
 
 const getAvailabilityColor = (status: string) => {
   switch (status) {
@@ -99,10 +100,27 @@ export const Home: React.FC = () => {
   });
   const [availableCategories, setAvailableCategories] = useState<Array<{ id: number; name: string }>>([]);
   const [emergencyMode, setEmergencyMode] = useState({ enabled: false });
+  const [totalLoaded, setTotalLoaded] = useState(0);
+  const MAX_PROVIDERS = 1000; // High limit to allow loading all providers
+  const [isFetchingProviders, setIsFetchingProviders] = useState(false);
 
   useEffect(() => {
-    fetchCategories();
-    fetchEmergencyMode();
+    const initializeApp = async () => {
+      try {
+        await Promise.all([
+          fetchCategories(),
+          fetchEmergencyMode()
+        ]);
+        // Only fetch providers after categories and emergency mode are loaded
+        fetchProviders(true);
+      } catch (error) {
+        console.error('Error initializing app:', error);
+        // Still try to load providers even if other fetches fail
+        fetchProviders(true);
+      }
+    };
+    
+    initializeApp();
   }, []);
 
   const fetchEmergencyMode = async () => {
@@ -134,13 +152,26 @@ export const Home: React.FC = () => {
     }
   };
 
-  const fetchProviders = useCallback(async (reset = false) => {
-    console.log(`[DEBUG] fetchProviders called with reset=${reset}, current filters:`, filters);
+  const fetchProviders = async (reset = false) => {
+    // Prevent concurrent requests
+    if (isFetchingProviders) {
+      return;
+    }
+    
+    // Prevent loading more if we've reached the limit
+    if (!reset && totalLoaded >= MAX_PROVIDERS) {
+      setHasMore(false);
+      return;
+    }
+    
+    setIsFetchingProviders(true);
+    
     if (reset) {
       setLoading(true);
       setCursor(null);
       setHasMore(false);
       setSuggestions([]);
+      setTotalLoaded(0);
     } else {
       setLoadingMore(true);
     }
@@ -153,53 +184,52 @@ export const Home: React.FC = () => {
       if (!reset && cursor) params.append('cursor', cursor);
 
       const url = `${API_BASE}/providers?${params}`;
-      console.log('[DEBUG] Fetching providers from URL:', url);
 
       const response = await fetch(url);
-      console.log('[DEBUG] Response status:', response.status);
       
       if (!response.ok) throw new Error('Failed to fetch providers');
       const data = await response.json();
-      console.log('[DEBUG] Response data:', data);
       if (data.error) throw new Error(data.error);
 
+      const newProviders = data.data.providers;
+      const limitedProviders = reset ? newProviders.slice(0, MAX_PROVIDERS) : newProviders;
+      const newTotal = reset ? limitedProviders.length : totalLoaded + limitedProviders.length;
+      
       if (reset) {
-        setProviders(data.data.providers);
-        console.log('[DEBUG] Set providers (reset):', data.data.providers.length, 'providers');
+        setProviders(limitedProviders);
+        setTotalLoaded(limitedProviders.length);
       } else {
         setProviders(prev => {
-          const newProviders = [...prev, ...data.data.providers];
-          console.log('[DEBUG] Added providers (load more):', data.data.providers.length, 'new providers, total:', newProviders.length);
-          return newProviders;
+          const combined = [...prev, ...limitedProviders];
+          return combined;
         });
+        setTotalLoaded(newTotal);
       }
+      
+      // Only show "Load More" if there are more results AND we haven't reached the limit
+      const shouldShowMore = !!data.data.nextCursor && newTotal < MAX_PROVIDERS;
+      setHasMore(shouldShowMore);
       setCursor(data.data.nextCursor);
-      setHasMore(!!data.data.nextCursor);
+      
       if (reset && data.data.providers.length === 0) {
         setSuggestions(data.data.suggestions || []);
-        console.log('[DEBUG] No providers found, set suggestions:', data.data.suggestions);
       }
     } catch (err) {
-      console.error('[DEBUG] Error fetching providers:', err);
       setError(err instanceof Error ? err.message : 'Unknown error');
     } finally {
       setLoading(false);
       setLoadingMore(false);
-      console.log('[DEBUG] fetchProviders completed');
+      setIsFetchingProviders(false);
     }
-  }, [filters, cursor]);
+  };
 
   useEffect(() => {
-    console.log('[DEBUG] Filters changed, fetching providers:', filters);
     fetchProviders(true);
-    fetchEmergencyMode();
-  }, [filters, fetchProviders]);
+  }, [filters]); // fetchProviders is now a regular function, no need to include in deps
 
   const handleFilterChange = (key: string, value: string) => {
-    console.log(`[DEBUG] Filter change: ${key} = "${value}"`);
     setFilters(prev => {
       const newFilters = { ...prev, [key]: value };
-      console.log('[DEBUG] New filters state:', newFilters);
       return newFilters;
     });
   };
@@ -244,7 +274,7 @@ export const Home: React.FC = () => {
 
       <div className="container mx-auto px-4 py-8">
       <h1 className="text-3xl font-bold mb-2">Find Providers</h1>
-      <p className="text-gray-600 mb-8">Your backup plan when your usual guy doesn't answer.</p>
+      <p className="text-gray-600 mb-8">Giving Visibility to Virgin Islands Service Providers</p>
 
       {emergencyMode.enabled && (
         <div className="mb-8 bg-yellow-50 border border-yellow-200 rounded-lg p-4">
@@ -326,51 +356,74 @@ export const Home: React.FC = () => {
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         {providers.map(provider => (
-          <Card key={provider.id} className="hover:shadow-lg transition-shadow">
-            <div className="flex justify-between items-start mb-2">
+          <Card key={provider.id} className="hover:shadow-lg transition-shadow flex flex-col">
+            <div className="flex justify-between items-start mb-3">
               <h2 className="text-xl font-semibold">{provider.name}</h2>
               {provider.lifecycle_status === 'INACTIVE' && (
                 <Badge label="Inactive" variant="secondary" />
               )}
             </div>
-            <p className="text-gray-600 mb-2">{getIslandDisplayName(provider.island)}</p>
-            {provider.categories && provider.categories.length > 0 && (
-              <p className="text-sm text-gray-500 mb-2">{provider.categories.join(', ')}</p>
-            )}
+            
+            <div className="mb-3">
+              <p className="text-gray-600">{getIslandDisplayName(provider.island)}</p>
+              {provider.categories && provider.categories.length > 0 && (
+                <p className="text-sm text-gray-500 mt-1">{provider.categories.join(', ')}</p>
+              )}
+            </div>
+
             {provider.profile?.description && (
-              <p className="text-sm text-gray-700 mb-2 line-clamp-2">
-                {provider.profile.description.length > 100
-                  ? `${provider.profile.description.substring(0, 100)}...`
-                  : provider.profile.description}
-              </p>
-            )}
-            <Badge label={provider.status} variant={getAvailabilityColor(provider.status)} className="mb-2" />
-            {provider.is_premium_active && (
-              <Badge label={provider.is_trial ? "Trial" : "Premium"} variant="success" className="mb-2 ml-2" />
-            )}
-            {provider.badges && provider.badges.length > 0 && (
-              <div className="flex flex-wrap gap-1 mb-2">
-                {provider.badges.map(badge => (
-                  <Badge key={badge} label={badge} variant="success" />
-                ))}
+              <div className="mb-3">
+                <p className="text-sm text-gray-700 line-clamp-2">
+                  {provider.profile.description.length > 100
+                    ? `${provider.profile.description.substring(0, 100)}...`
+                    : provider.profile.description}
+                </p>
               </div>
             )}
-            <p className="text-sm text-gray-500 mb-4">
-              Activity: {provider.last_active_at ? getHoursAgo(provider.last_active_at) : 'Never'}
-            </p>
-            {provider.contact_preference && provider.contact_preference !== 'BOTH' && (
-              <p className="text-sm text-blue-600 mb-2">
-                Prefers contact by {provider.contact_preference === 'PHONE' ? 'phone' : 'email'} only
+
+            <div className="mb-3">
+              <div className="flex flex-wrap gap-1 mb-2">
+                <Badge label={provider.status} variant={getAvailabilityColor(provider.status)} />
+                {provider.is_premium_active && (
+                  <Badge label={provider.is_trial ? "Trial" : "Premium"} variant="success" />
+                )}
+              </div>
+              
+              {provider.badges && provider.badges.length > 0 && (
+                <div className="flex flex-wrap gap-1">
+                  {provider.badges.map(badge => (
+                    <Badge key={badge} label={badge} variant="success" />
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div className="mt-auto">
+              <p className="text-sm text-gray-500 mb-2">
+                Activity: {provider.last_active_at ? getHoursAgo(provider.last_active_at) : 'Never'}
               </p>
-            )}
-            <div className="flex space-x-2">
-              <Button href={`tel:${provider.phone}`}>Call</Button>
-              <Button
-                href={provider.whatsapp ? `https://wa.me/${provider.whatsapp}` : `sms:${provider.phone}`}
-                variant="secondary"
-              >
-                {provider.whatsapp ? 'WhatsApp' : 'SMS'}
-              </Button>
+              
+              <div className="flex flex-wrap gap-2">
+                {(provider.contact_preference === 'PHONE' || provider.contact_preference === 'BOTH') && (
+                  <Button href={`tel:${provider.phone}`}>Call</Button>
+                )}
+                {(provider.contact_preference === 'PHONE' || provider.contact_preference === 'BOTH') && (
+                  <Button
+                    href={provider.whatsapp ? `https://wa.me/${provider.whatsapp}` : `sms:${provider.phone}`}
+                    variant="secondary"
+                  >
+                    {provider.whatsapp ? 'WhatsApp' : 'SMS'}
+                  </Button>
+                )}
+                {(provider.contact_preference === 'EMAIL' || provider.contact_preference === 'BOTH') && provider.email && (
+                  <Button
+                    href={`mailto:${provider.email}`}
+                    variant="secondary"
+                  >
+                    Email
+                  </Button>
+                )}
+              </div>
             </div>
           </Card>
         ))}
@@ -381,6 +434,14 @@ export const Home: React.FC = () => {
           <Button onClick={() => fetchProviders(false)} disabled={loadingMore}>
             {loadingMore ? 'Loading...' : 'Load More'}
           </Button>
+        </div>
+      )}
+      
+      {!hasMore && totalLoaded >= MAX_PROVIDERS && providers.length > 0 && (
+        <div className="text-center mt-8 p-4 bg-blue-50 border border-blue-200 rounded">
+          <p className="text-blue-800">
+            Showing {totalLoaded} providers. To see more results, try using the filters above.
+          </p>
         </div>
       )}
       </div>

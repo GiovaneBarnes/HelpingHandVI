@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, useSearchParams, Link } from 'react-router-dom';
+import { firebaseAuth } from '../../services/firebaseAuth';
 
 const ResetPassword: React.FC = () => {
   const [password, setPassword] = useState('');
@@ -10,13 +11,13 @@ const ResetPassword: React.FC = () => {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
 
-  const token = searchParams.get('token');
+  const oobCode = searchParams.get('oobCode');
 
   useEffect(() => {
-    if (!token) {
+    if (!oobCode) {
       setError('Invalid reset link. Please request a new password reset.');
     }
-  }, [token]);
+  }, [oobCode]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -37,29 +38,19 @@ const ResetPassword: React.FC = () => {
     }
 
     try {
-      const response = await fetch(`${window.location.protocol}//${window.location.hostname}:3000/reset-password`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ token, password }),
-      });
-
-      if (response.ok) {
-        setMessage('Password reset successfully! You can now sign in with your new password.');
-        setTimeout(() => {
-          navigate('/provider/login');
-        }, 3000);
-      } else {
-        const data = await response.json();
-        setError(data.error || 'An error occurred');
-      }
+      await firebaseAuth.confirmPasswordReset(oobCode!, password);
+      setMessage('Password reset successfully! You can now sign in with your new password.');
+      setTimeout(() => {
+        navigate('/provider/login');
+      }, 3000);
     } catch (err) {
-      setError('Network error. Please try again.');
+      setError(err instanceof Error ? err.message : 'An error occurred');
     } finally {
       setLoading(false);
     }
   };
 
-  if (!token) {
+  if (!oobCode) {
     return (
       <div className="min-h-screen bg-gray-50">
         {/* Header Navigation */}

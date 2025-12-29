@@ -18,4 +18,5 @@ INSERT INTO categories (name) VALUES
 ('Cleaning Service'),
 ('Music'),
 ('Technology'),
-('Fitness');
+('Fitness'),
+('Beauty Services');

@@ -2,22 +2,12 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { Card } from '../components/Card';
 import { Button } from '../components/Button';
-
-const API_BASE = `${window.location.protocol}//${window.location.hostname}:3000`;
+import { API_BASE } from '../constants';
+import { firebaseAuth } from '../services/firebaseAuth';
 
 interface Category {
   id: number;
   name: string;
-}
-
-interface ProviderResponse {
-  id: number;
-  name: string;
-  token: string;
-  plan: string;
-  plan_source: string;
-  trial_end_at: string;
-  trial_days_left: number;
 }
 
 export const Join: React.FC = () => {
@@ -66,36 +56,44 @@ export const Join: React.FC = () => {
     return Object.keys(newErrors).length === 0;
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!validate()) return;
-    
-    fetch(`${API_BASE}/providers`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        name: form.name,
-        email: form.email,
-        password: form.password,
-        phone: form.phone,
-        island: form.island,
-        categories: form.categories,
-        emergency_calls_accepted: form.emergency_calls_accepted,
-        contact_preference: form.contact_preference,
-      }),
-    })
-      .then(response => {
-        if (!response.ok) throw new Error('Failed to create provider');
-        return response.json() as Promise<ProviderResponse>;
-      })
-      .then(data => {
-        // Auto-login after successful signup
-        localStorage.setItem('provider_token', data.token);
-        navigate('/provider/dashboard');
-      })
-      .catch(() => {
-        alert('Error creating provider');
+
+    try {
+      // Create Firebase Auth user first
+      const firebaseUser = await firebaseAuth.signUp(form.email, form.password);
+      
+      // Then create provider in database with Firebase UID
+      const response = await fetch(`${API_BASE}/providers`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: form.name,
+          email: form.email,
+          password: form.password,
+          phone: form.phone,
+          island: form.island,
+          categories: form.categories,
+          emergency_calls_accepted: form.emergency_calls_accepted,
+          contact_preference: form.contact_preference,
+          firebase_uid: firebaseUser.uid,
+        }),
       });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to create provider');
+      }
+      
+      // Provider created successfully
+      // Auto-login after successful signup
+      localStorage.setItem('provider_token', firebaseUser.idToken);
+      navigate('/provider/dashboard');
+    } catch (error) {
+      console.error('Sign up error:', error);
+      alert(error instanceof Error ? error.message : 'Error creating account');
+    }
   };
 
   const handleCategoryChange = (category: string, checked: boolean) => {

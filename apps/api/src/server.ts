@@ -3,9 +3,18 @@ import cors from 'cors';
 import dotenv from 'dotenv';
 import pg from 'pg';
 import crypto from 'crypto';
+import * as admin from 'firebase-admin';
 import { emailService } from './services/emailService';
 
 dotenv.config();
+
+// Initialize Firebase Admin
+if (!admin.apps.length) {
+  admin.initializeApp({
+    credential: admin.credential.applicationDefault(),
+    projectId: process.env.FIREBASE_PROJECT_ID || 'helpinghandvi'
+  });
+}
 
 console.log('Starting server...');
 console.log('DATABASE_URL:', process.env.DATABASE_URL);
@@ -15,6 +24,7 @@ declare global {
   namespace Express {
     interface Request {
       adminActor?: string;
+      providerId?: number;
     }
   }
 }
@@ -253,12 +263,67 @@ const adminAuth = (req: Request, res: Response, next: NextFunction) => {
 
 export { adminAuth };
 
+// Provider auth middleware
+const providerAuth = async (req: Request, res: Response, next: NextFunction) => {
+  const authHeader = req.headers.authorization;
+  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+  const token = authHeader.substring(7);
+
+  try {
+    // Try to validate as Firebase token first
+    console.log('Attempting Firebase token validation');
+    const decodedToken = await admin.auth().verifyIdToken(token);
+    console.log('Firebase token decoded:', decodedToken.uid);
+    const firebaseUid = decodedToken.uid;
+
+    // Look up provider by Firebase UID
+    console.log('Looking up provider with firebase_uid:', firebaseUid);
+    const result = await pool.query(
+      'SELECT id FROM providers WHERE firebase_uid = $1 AND lifecycle_status != \'ARCHIVED\'',
+      [firebaseUid]
+    );
+    console.log('Provider lookup result:', result.rows.length);
+
+    if (result.rows.length === 0) {
+      return res.status(401).json({ error: 'Provider not found for this Firebase user' });
+    }
+
+    req.providerId = result.rows[0].id;
+    return next();
+  } catch (firebaseError) {
+    // Firebase validation failed, try custom token format
+    console.log('Firebase token validation failed, trying custom token:', firebaseError instanceof Error ? firebaseError.message : 'Unknown error');
+  }
+
+  // Fallback to custom token format
+  const match = token.match(/^provider_(\d+)_(\d+)$/);
+  if (!match) {
+    return res.status(401).json({ error: 'Invalid token' });
+  }
+
+  const providerId = parseInt(match[1]);
+  const timestamp = parseInt(match[2]);
+
+  // Check if token is not too old (24 hours)
+  if (Date.now() - timestamp > 24 * 60 * 60 * 1000) {
+    return res.status(401).json({ error: 'Token expired' });
+  }
+
+  req.providerId = providerId;
+  next();
+};
+
+export { providerAuth };
+
 app.use(cors({
   origin: [
     'http://localhost:5173',
     'http://localhost:5174',
     'http://192.168.1.245:5173',
-    'http://192.168.1.245:5174'
+    'http://192.168.1.245:5174',
+    'https://helpinghandvi.web.app'
   ], // allow web app on common dev ports and network IPs
 }));
 
@@ -501,7 +566,7 @@ app.get('/providers', async (req: Request, res: Response) => {
 
     let query = `
       SELECT p.*,
-             (SELECT COALESCE(MAX(created_at), '1900-01-01'::timestamp) FROM activity_events WHERE provider_id = p.id) as last_active_at,
+             (SELECT COALESCE(MAX(created_at), p.created_at) FROM activity_events WHERE provider_id = p.id) as last_active_at,
              p.lifecycle_status,
              p.is_disputed,
              p.plan,
@@ -521,7 +586,17 @@ app.get('/providers', async (req: Request, res: Response) => {
                        EXISTS (SELECT 1 FROM provider_badges WHERE provider_id = p.id AND badge = 'EMERGENCY_READY')
                   THEN 1 ELSE 0 END as emergency_boost_eligible,
              (SELECT COALESCE(json_agg(pb.badge), '[]'::json) FROM provider_badges pb WHERE pb.provider_id = p.id) as badges,
-             (SELECT array_agg(c.name) FROM categories c JOIN provider_categories pc ON c.id = pc.category_id WHERE pc.provider_id = p.id) as categories
+             (SELECT array_agg(c.name) FROM categories c JOIN provider_categories pc ON c.id = pc.category_id WHERE pc.provider_id = p.id) as categories,
+             -- Contact preference flags for backward compatibility
+             CASE WHEN p.contact_preference IN ('PHONE', 'BOTH') THEN true ELSE false END as contact_call_enabled,
+             CASE WHEN p.contact_preference IN ('PHONE', 'BOTH') THEN true ELSE false END as contact_sms_enabled,
+             CASE WHEN p.contact_preference IN ('PHONE', 'BOTH') THEN true ELSE false END as contact_whatsapp_enabled,
+             CASE 
+               WHEN p.contact_preference = 'PHONE' THEN 'CALL'
+               WHEN p.contact_preference = 'EMAIL' THEN 'EMAIL' 
+               WHEN p.contact_preference = 'BOTH' THEN 'CALL'
+               ELSE 'CALL'
+             END as preferred_contact_method
       FROM providers p
       WHERE p.lifecycle_status != 'ARCHIVED'
     `;
@@ -706,7 +781,7 @@ app.get('/providers/:id', async (req, res) => {
     const { id } = req.params;
     const query = `
       SELECT p.*,
-             (SELECT MAX(created_at) FROM activity_events WHERE provider_id = p.id) as last_active_at,
+             (SELECT COALESCE(MAX(created_at), p.created_at) FROM activity_events WHERE provider_id = p.id) as last_active_at,
              p.plan,
              p.plan_source,
              p.trial_end_at,
@@ -719,7 +794,17 @@ app.get('/providers/:id', async (req, res) => {
                 JOIN provider_areas pa ON pa.area_id = a.id
                 WHERE pa.provider_id = p.id),
                '[]'::json
-             ) as areas
+             ) as areas,
+             -- Contact preference flags for backward compatibility
+             CASE WHEN p.contact_preference IN ('PHONE', 'BOTH') THEN true ELSE false END as contact_call_enabled,
+             CASE WHEN p.contact_preference IN ('PHONE', 'BOTH') THEN true ELSE false END as contact_sms_enabled,
+             CASE WHEN p.contact_preference IN ('PHONE', 'BOTH') THEN true ELSE false END as contact_whatsapp_enabled,
+             CASE 
+               WHEN p.contact_preference = 'PHONE' THEN 'CALL'
+               WHEN p.contact_preference = 'EMAIL' THEN 'EMAIL' 
+               WHEN p.contact_preference = 'BOTH' THEN 'CALL'
+               ELSE 'CALL'
+             END as preferred_contact_method
       FROM providers p
       WHERE p.id = $1 AND p.lifecycle_status != 'ARCHIVED'
     `;
@@ -744,7 +829,8 @@ app.post('/providers', async (req, res) => {
       island,
       categories,
       emergency_calls_accepted = false,
-      contact_preference = 'BOTH'
+      contact_preference = 'BOTH',
+      firebase_uid
     } = req.body;
 
     // Validation
@@ -776,11 +862,11 @@ app.post('/providers', async (req, res) => {
         `INSERT INTO providers (
           name, email, password_hash, phone, island, plan, plan_source, trial_start_at, trial_end_at,
           contact_call_enabled, contact_sms_enabled,
-          emergency_calls_accepted, contact_preference
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13) RETURNING id`,
+          emergency_calls_accepted, contact_preference, firebase_uid
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14) RETURNING id`,
         [name, email, hashedPassword, phone, island, 'PREMIUM', 'TRIAL', trialStart, trialEnd,
          true, true,
-         emergency_calls_accepted, contact_preference]
+         emergency_calls_accepted, contact_preference, firebase_uid]
       );
       const providerId = providerResult.rows[0].id;
 
@@ -1176,6 +1262,290 @@ app.get('/providers/:id/insights', async (req, res) => {
   }
 });
 
+app.get('/me', providerAuth, async (req, res) => {
+  try {
+    const providerId = req.providerId!;
+    
+    const result = await pool.query(`
+      SELECT 
+        p.id,
+        p.name,
+        p.island,
+        p.phone,
+        p.email,
+        p.profile->>'description' as description,
+        p.status,
+        p.last_updated_at,
+        p.lifecycle_status,
+        p.is_disputed,
+        p.plan,
+        p.plan_source,
+        p.trial_end_at,
+        p.contact_preference,
+        COALESCE(p.contact_call_enabled, true) as contact_call_enabled,
+        COALESCE(p.contact_sms_enabled, true) as contact_sms_enabled,
+        COALESCE(p.emergency_calls_accepted, false) as emergency_calls_accepted,
+        COALESCE(array_agg(DISTINCT c.name) FILTER (WHERE c.name IS NOT NULL), ARRAY[]::text[]) as categories,
+        COALESCE(array_agg(DISTINCT a.name) FILTER (WHERE a.name IS NOT NULL), ARRAY[]::text[]) as areas,
+        COALESCE(array_agg(DISTINCT pb.badge::text) FILTER (WHERE pb.badge IS NOT NULL), ARRAY[]::text[]) as badges
+      FROM providers p
+      LEFT JOIN provider_categories pc ON p.id = pc.provider_id
+      LEFT JOIN categories c ON pc.category_id = c.id
+      LEFT JOIN provider_areas pa ON p.id = pa.provider_id
+      LEFT JOIN areas a ON pa.area_id = a.id
+      LEFT JOIN provider_badges pb ON p.id = pb.provider_id
+      WHERE p.id = $1 AND p.lifecycle_status != 'ARCHIVED'
+      GROUP BY p.id
+    `, [providerId]);
+    
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Provider not found' });
+    }
+    
+    const provider = result.rows[0];
+    
+    // Format the response
+    const response = {
+      id: provider.id,
+      name: provider.name,
+      island: provider.island,
+      phone: provider.phone,
+      email: provider.email,
+      description: provider.description || '',
+      status: provider.status,
+      categories: provider.categories || [],
+      areas: provider.areas || [],
+      badges: provider.badges || [],
+      updated_at: provider.last_updated_at,
+      lifecycle_status: provider.lifecycle_status,
+      is_disputed: provider.is_disputed,
+      plan: provider.plan,
+      plan_source: provider.plan_source,
+      trial_end_at: provider.trial_end_at,
+      contact_preference: provider.contact_preference,
+      contact_call_enabled: provider.contact_call_enabled,
+      contact_sms_enabled: provider.contact_sms_enabled,
+      emergency_calls_accepted: provider.emergency_calls_accepted
+    };
+    
+    res.json(response);
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+app.put('/me/status', providerAuth, async (req, res) => {
+  try {
+    const providerId = req.providerId!;
+    const { status } = req.body;
+    
+    if (!status) {
+      return res.status(400).json({ error: 'Status is required' });
+    }
+    
+    await pool.query("UPDATE providers SET status = $1, status_last_updated_at = CURRENT_TIMESTAMP WHERE id = $2", [status, providerId]);
+    
+    // Log activity
+    await ActivityService.logEvent(providerId, 'STATUS_UPDATE');
+    
+    // Return updated provider data
+    const result = await pool.query(`
+      SELECT 
+        p.id,
+        p.name,
+        p.island,
+        p.phone,
+        p.email,
+        p.description,
+        p.status,
+        p.last_active_at,
+        p.updated_at,
+        p.trust_tier,
+        p.lifecycle_status,
+        p.is_disputed,
+        p.plan,
+        p.plan_source,
+        p.trial_end_at,
+        p.is_premium_active,
+        p.trial_days_left,
+        p.is_trial,
+        p.emergency_boost_eligible,
+        p.contact_preference,
+        COALESCE(p.contact_call_enabled, true) as contact_call_enabled,
+        COALESCE(p.contact_sms_enabled, true) as contact_sms_enabled,
+        COALESCE(p.emergency_calls_accepted, false) as emergency_calls_accepted,
+        COALESCE(array_agg(DISTINCT c.name) FILTER (WHERE c.name IS NOT NULL), ARRAY[]::text[]) as categories,
+        COALESCE(array_agg(DISTINCT a.name) FILTER (WHERE a.name IS NOT NULL), ARRAY[]::text[]) as areas,
+        COALESCE(array_agg(DISTINCT pb.badge::text) FILTER (WHERE pb.badge IS NOT NULL), ARRAY[]::text[]) as badges
+      FROM providers p
+      LEFT JOIN provider_categories pc ON p.id = pc.provider_id
+      LEFT JOIN categories c ON pc.category_id = c.id
+      LEFT JOIN provider_areas pa ON p.id = pa.provider_id
+      LEFT JOIN areas a ON pa.area_id = a.id
+      LEFT JOIN provider_badges pb ON p.id = pb.provider_id
+      WHERE p.id = $1 AND p.lifecycle_status != 'ARCHIVED'
+      GROUP BY p.id
+    `, [providerId]);
+    
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Provider not found' });
+    }
+    
+    const provider = result.rows[0];
+    const response = {
+      id: provider.id,
+      name: provider.name,
+      island: provider.island,
+      phone: provider.phone,
+      email: provider.email,
+      description: provider.description || '',
+      status: provider.status,
+      last_active_at: provider.last_active_at,
+      categories: provider.categories || [],
+      areas: provider.areas || [],
+      badges: provider.badges || [],
+      updated_at: provider.updated_at,
+      trust_tier: provider.trust_tier,
+      lifecycle_status: provider.lifecycle_status,
+      is_disputed: provider.is_disputed,
+      plan: provider.plan,
+      plan_source: provider.plan_source,
+      trial_end_at: provider.trial_end_at,
+      is_premium_active: provider.is_premium_active,
+      trial_days_left: provider.trial_days_left,
+      is_trial: provider.is_trial,
+      emergency_boost_eligible: provider.emergency_boost_eligible,
+      contact_preference: provider.contact_preference,
+      contact_call_enabled: provider.contact_call_enabled,
+      contact_sms_enabled: provider.contact_sms_enabled,
+      emergency_calls_accepted: provider.emergency_calls_accepted
+    };
+    
+    res.json(response);
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+app.put('/me/profile', providerAuth, async (req, res) => {
+  try {
+    const providerId = req.providerId!;
+    const { phone, description, categories, areas, contact_preference } = req.body;
+    
+    // Update basic fields
+    await pool.query(`
+      UPDATE providers 
+      SET phone = $1, description = $2, contact_preference = $3, updated_at = CURRENT_TIMESTAMP
+      WHERE id = $4
+    `, [phone, description, contact_preference, providerId]);
+    
+    // Update categories
+    if (categories) {
+      await pool.query('DELETE FROM provider_categories WHERE provider_id = $1', [providerId]);
+      for (const categoryName of categories) {
+        const categoryResult = await pool.query('SELECT id FROM categories WHERE name = $1', [categoryName]);
+        if (categoryResult.rows.length > 0) {
+          await pool.query('INSERT INTO provider_categories (provider_id, category_id) VALUES ($1, $2)', [providerId, categoryResult.rows[0].id]);
+        }
+      }
+    }
+    
+    // Update areas
+    if (areas) {
+      await pool.query('DELETE FROM provider_areas WHERE provider_id = $1', [providerId]);
+      for (const areaName of areas) {
+        const areaResult = await pool.query('SELECT id FROM areas WHERE name = $1', [areaName]);
+        if (areaResult.rows.length > 0) {
+          await pool.query('INSERT INTO provider_areas (provider_id, area_id) VALUES ($1, $2)', [providerId, areaResult.rows[0].id]);
+        }
+      }
+    }
+    
+    // Log activity
+    await ActivityService.logEvent(providerId, 'PROFILE_UPDATE');
+    
+    // Return updated provider data
+    const result = await pool.query(`
+      SELECT 
+        p.id,
+        p.name,
+        p.island,
+        p.phone,
+        p.email,
+        p.description,
+        p.status,
+        p.last_active_at,
+        p.updated_at,
+        p.trust_tier,
+        p.lifecycle_status,
+        p.is_disputed,
+        p.plan,
+        p.plan_source,
+        p.trial_end_at,
+        p.is_premium_active,
+        p.trial_days_left,
+        p.is_trial,
+        p.emergency_boost_eligible,
+        p.contact_preference,
+        COALESCE(p.contact_call_enabled, true) as contact_call_enabled,
+        COALESCE(p.contact_sms_enabled, true) as contact_sms_enabled,
+        COALESCE(p.emergency_calls_accepted, false) as emergency_calls_accepted,
+        COALESCE(array_agg(DISTINCT c.name) FILTER (WHERE c.name IS NOT NULL), ARRAY[]::text[]) as categories,
+        COALESCE(array_agg(DISTINCT a.name) FILTER (WHERE a.name IS NOT NULL), ARRAY[]::text[]) as areas,
+        COALESCE(array_agg(DISTINCT pb.badge::text) FILTER (WHERE pb.badge IS NOT NULL), ARRAY[]::text[]) as badges
+      FROM providers p
+      LEFT JOIN provider_categories pc ON p.id = pc.provider_id
+      LEFT JOIN categories c ON pc.category_id = c.id
+      LEFT JOIN provider_areas pa ON p.id = pa.provider_id
+      LEFT JOIN areas a ON pa.area_id = a.id
+      LEFT JOIN provider_badges pb ON p.id = pb.provider_id
+      WHERE p.id = $1 AND p.lifecycle_status != 'ARCHIVED'
+      GROUP BY p.id
+    `, [providerId]);
+    
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Provider not found' });
+    }
+    
+    const provider = result.rows[0];
+    const response = {
+      id: provider.id,
+      name: provider.name,
+      island: provider.island,
+      phone: provider.phone,
+      email: provider.email,
+      description: provider.description || '',
+      status: provider.status,
+      last_active_at: provider.last_active_at,
+      categories: provider.categories || [],
+      areas: provider.areas || [],
+      badges: provider.badges || [],
+      updated_at: provider.updated_at,
+      trust_tier: provider.trust_tier,
+      lifecycle_status: provider.lifecycle_status,
+      is_disputed: provider.is_disputed,
+      plan: provider.plan,
+      plan_source: provider.plan_source,
+      trial_end_at: provider.trial_end_at,
+      is_premium_active: provider.is_premium_active,
+      trial_days_left: provider.trial_days_left,
+      is_trial: provider.is_trial,
+      emergency_boost_eligible: provider.emergency_boost_eligible,
+      contact_preference: provider.contact_preference,
+      contact_call_enabled: provider.contact_call_enabled,
+      contact_sms_enabled: provider.contact_sms_enabled,
+      emergency_calls_accepted: provider.emergency_calls_accepted
+    };
+    
+    res.json(response);
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 app.post('/reports', async (req, res) => {
   try {
     const { provider_id, reason, contact } = req.body;
@@ -1231,7 +1601,7 @@ app.get('/admin/providers', adminAuth, async (req, res) => {
 
     let query = `
       SELECT p.*,
-             (SELECT MAX(created_at) FROM activity_events WHERE provider_id = p.id) as last_active_at,
+             (SELECT COALESCE(MAX(created_at), p.created_at) FROM activity_events WHERE provider_id = p.id) as last_active_at,
              (p.plan = 'PREMIUM' AND (p.plan_source != 'TRIAL' OR p.trial_end_at > NOW())) as is_premium_active,
              CASE WHEN p.trial_end_at > NOW() THEN CEIL(EXTRACT(EPOCH FROM (p.trial_end_at - NOW())) / 86400) ELSE 0 END as trial_days_left,
              CASE WHEN p.plan_source = 'TRIAL' AND p.trial_end_at > NOW() THEN true ELSE false END as is_trial,
@@ -1239,7 +1609,17 @@ app.get('/admin/providers', adminAuth, async (req, res) => {
              p.disputed_at,
              p.lifecycle_status,
              (p.lifecycle_status = 'ARCHIVED') as archived,
-             (SELECT COALESCE(json_agg(pb2.badge), '[]'::json) FROM provider_badges pb2 WHERE pb2.provider_id = p.id) as badges
+             (SELECT COALESCE(json_agg(pb2.badge), '[]'::json) FROM provider_badges pb2 WHERE pb2.provider_id = p.id) as badges,
+             -- Contact preference flags for backward compatibility
+             CASE WHEN p.contact_preference IN ('PHONE', 'BOTH') THEN true ELSE false END as contact_call_enabled,
+             CASE WHEN p.contact_preference IN ('PHONE', 'BOTH') THEN true ELSE false END as contact_sms_enabled,
+             CASE WHEN p.contact_preference IN ('PHONE', 'BOTH') THEN true ELSE false END as contact_whatsapp_enabled,
+             CASE 
+               WHEN p.contact_preference = 'PHONE' THEN 'CALL'
+               WHEN p.contact_preference = 'EMAIL' THEN 'EMAIL' 
+               WHEN p.contact_preference = 'BOTH' THEN 'CALL'
+               ELSE 'CALL'
+             END as preferred_contact_method
       FROM providers p
       WHERE 1=1
     `;
@@ -1418,6 +1798,45 @@ app.put('/admin/providers/:id/archive', adminAuth, async (req, res) => {
     });
 
     res.json({ message: `Provider ${isArchiving ? 'archived' : 'unarchived'}` });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+app.delete('/admin/providers/:id', adminAuth, async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    // Check if provider exists
+    const providerResult = await pool.query('SELECT name, email FROM providers WHERE id = $1', [id]);
+    if (providerResult.rows.length === 0) {
+      return res.status(404).json({ error: 'Provider not found' });
+    }
+    const { name: providerName, email } = providerResult.rows[0];
+
+    // Delete Firebase Auth user if exists
+    try {
+      const user = await admin.auth().getUserByEmail(email);
+      await admin.auth().deleteUser(user.uid);
+      console.log(`Deleted Firebase Auth user for ${email}`);
+    } catch (firebaseError) {
+      // User might not exist in Firebase Auth, which is fine
+      console.log(`Firebase Auth user not found for ${email}, skipping deletion`);
+    }
+
+    // Delete provider (cascade will handle related records)
+    await pool.query('DELETE FROM providers WHERE id = $1', [id]);
+
+    // Log audit event
+    await AuditService.log({
+      actionType: 'DELETE_PROVIDER',
+      adminActor: req.adminActor!,
+      providerId: parseInt(id),
+      notes: `Provider "${providerName}" permanently deleted by admin`
+    });
+
+    res.json({ message: `Provider "${providerName}" has been permanently deleted` });
   } catch (error) {
     console.error(error);
     res.status(500).json({ error: 'Internal server error' });
@@ -1867,6 +2286,81 @@ app.post('/migrate-islands', async (req: Request, res: Response) => {
 });
 
 if (process.env.NODE_ENV !== 'test') {
+  // Run database migrations if needed
+  (async () => {
+    try {
+      console.log('Checking for pending migrations...');
+
+      // Check if plan_source column exists
+      const columnCheck = await pool.query(`
+        SELECT column_name
+        FROM information_schema.columns
+        WHERE table_name = 'providers' AND column_name = 'plan_source'
+      `);
+
+      if (columnCheck.rows.length === 0) {
+        console.log('Applying plan_source migration...');
+
+        // Create enum if it doesn't exist
+        try {
+          await pool.query(`CREATE TYPE plan_source AS ENUM ('FREE', 'TRIAL', 'PAID');`);
+        } catch (error: any) {
+          if (!error.message.includes('already exists')) {
+            throw error;
+          }
+        }
+
+        // Add column
+        await pool.query(`
+          ALTER TABLE providers ADD COLUMN plan_source plan_source NOT NULL DEFAULT 'FREE';
+        `);
+
+        // Update existing data
+        await pool.query(`
+          UPDATE providers SET plan_source = 'TRIAL' WHERE plan = 'PREMIUM' AND trial_end_at IS NOT NULL;
+        `);
+
+        // Add indexes
+        await pool.query(`CREATE INDEX IF NOT EXISTS idx_providers_plan ON providers(plan);`);
+        await pool.query(`CREATE INDEX IF NOT EXISTS idx_providers_trial_end_at ON providers(trial_end_at);`);
+        await pool.query(`CREATE INDEX IF NOT EXISTS idx_providers_created_at ON providers(created_at);`);
+
+        console.log('Migration completed successfully');
+      } else {
+        console.log('Migrations are up to date');
+      }
+
+      // Check if contact_preference column exists
+      const contactPrefCheck = await pool.query(`
+        SELECT column_name
+        FROM information_schema.columns
+        WHERE table_name = 'providers' AND column_name = 'contact_preference'
+      `);
+
+      if (contactPrefCheck.rows.length === 0) {
+        console.log('Applying contact_preference migration...');
+
+        // Create enum if it doesn't exist
+        try {
+          await pool.query(`CREATE TYPE contact_preference AS ENUM ('PHONE', 'EMAIL', 'BOTH');`);
+        } catch (error: any) {
+          if (!error.message.includes('already exists')) {
+            throw error;
+          }
+        }
+
+        // Add column
+        await pool.query(`
+          ALTER TABLE providers ADD COLUMN contact_preference contact_preference NOT NULL DEFAULT 'BOTH';
+        `);
+
+        console.log('Contact preference migration completed successfully');
+      }
+    } catch (error) {
+      console.error('Migration check failed:', error);
+    }
+  })();
+
   // Run initial verification check
   VerificationService.checkAndUpdateAllProviders();
   

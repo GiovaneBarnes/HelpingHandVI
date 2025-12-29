@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
+import { providerApi } from '../../services/providerApi';
 
 const ProviderLogin: React.FC = () => {
   const [email, setEmail] = useState('');
@@ -8,21 +9,20 @@ const ProviderLogin: React.FC = () => {
   const [error, setError] = useState('');
   const navigate = useNavigate();
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
     setError('');
 
-    // Mock authentication
-    setTimeout(() => {
-      if (email === 'provider@example.com' && password === 'password') {
-        localStorage.setItem('provider_token', 'mock_token');
-        navigate('/provider/dashboard');
-      } else {
-        setError('Invalid email or password');
-      }
+    try {
+      const result = await providerApi.login(email, password);
+      localStorage.setItem('provider_token', result.token);
+      navigate('/provider/dashboard');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Login failed');
+    } finally {
       setLoading(false);
-    }, 1000);
+    }
   };
 
   return (

@@ -12,11 +12,11 @@ export class EmailService {
   private provider: string;
 
   constructor() {
-    this.provider = process.env.EMAIL_PROVIDER || 'console'; // 'console', 'sendgrid', 'ses', 'smtp'
+    this.provider = process.env.EMAIL_PROVIDER || 'gmail'; // 'console', 'sendgrid', 'ses', 'smtp', 'gmail'
   }
 
   async sendPasswordResetEmail(email: string, resetToken: string): Promise<void> {
-    const resetLink = `${process.env.FRONTEND_URL || 'http://localhost:5173'}/provider/reset-password?token=${resetToken}`;
+    const resetLink = `${process.env.FRONTEND_URL || (process.env.NODE_ENV === 'production' ? 'https://helpinghandvi.web.app' : 'http://localhost:5173')}/provider/reset-password?token=${resetToken}`;
 
     const subject = 'Password Reset - HelpingHandVI';
     const html = this.getPasswordResetHtml(resetLink);
@@ -98,6 +98,9 @@ HelpingHandVI - Connecting customers with trusted service providers in the Virgi
       case 'smtp':
         await this.sendWithSMTP(options);
         break;
+      case 'gmail':
+        await this.sendWithGmail(options);
+        break;
       default:
         await this.sendToConsole(options);
     }
@@ -140,6 +143,37 @@ HelpingHandVI - Connecting customers with trusted service providers in the Virgi
   private async sendWithSMTP(options: EmailOptions): Promise<void> {
     // TODO: Install nodemailer and implement
     throw new Error('SMTP not implemented yet. Use console provider for development.');
+  }
+
+  private async sendWithGmail(options: EmailOptions): Promise<void> {
+    // Temporarily disabled - requires nodemailer
+    throw new Error('Gmail provider temporarily disabled. Use SendGrid or console provider.');
+    /*
+    // Use Gmail SMTP for testing - requires app password
+    const nodemailer = await import('nodemailer');
+
+    if (!process.env.GMAIL_USER || !process.env.GMAIL_APP_PASSWORD) {
+      throw new Error('GMAIL_USER and GMAIL_APP_PASSWORD environment variables are required for Gmail provider');
+    }
+
+    const transporter = nodemailer.createTransporter({
+      service: 'gmail',
+      auth: {
+        user: process.env.GMAIL_USER,
+        pass: process.env.GMAIL_APP_PASSWORD,
+      },
+    });
+
+    await transporter.sendMail({
+      from: process.env.FROM_EMAIL || process.env.GMAIL_USER,
+      to: options.to,
+      subject: options.subject,
+      html: options.html,
+      text: options.text,
+    });
+
+    console.log(`✅ Password reset email sent to ${options.to} via Gmail`);
+    */
   }
 
   private async sendToConsole(options: EmailOptions): Promise<void> {

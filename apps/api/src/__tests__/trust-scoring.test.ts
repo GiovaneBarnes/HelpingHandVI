@@ -64,10 +64,10 @@ describe('Trust Scoring System', () => {
              -- Lifecycle status weights (ACTIVE > INACTIVE)
              CASE WHEN p.lifecycle_status = 'ACTIVE' THEN 10 ELSE 0 END as trust_score,
              p.lifecycle_status,
-             (SELECT MAX(created_at) FROM activity_events WHERE provider_id = p.id) as last_active_at
+             (SELECT COALESCE(MAX(created_at), p.created_at) FROM activity_events WHERE provider_id = p.id) as last_active_at
       FROM providers p
       ORDER BY trust_score DESC,
-               (SELECT MAX(created_at) FROM activity_events WHERE provider_id = p.id) DESC NULLS LAST,
+               (SELECT COALESCE(MAX(created_at), p.created_at) FROM activity_events WHERE provider_id = p.id) DESC,
                p.status_last_updated_at DESC,
                p.id ASC
     `);
@@ -159,11 +159,11 @@ describe('Trust Scoring System', () => {
     const result = await pool.query(`
       SELECT p.id, p.name,
              10 as trust_score, -- Same score for both
-             (SELECT MAX(created_at) FROM activity_events WHERE provider_id = p.id) as last_active_at
+             (SELECT COALESCE(MAX(created_at), p.created_at) FROM activity_events WHERE provider_id = p.id) as last_active_at
       FROM providers p
       WHERE p.id IN (8, 9)
       ORDER BY trust_score DESC,
-               (SELECT MAX(created_at) FROM activity_events WHERE provider_id = p.id) DESC NULLS LAST,
+               (SELECT COALESCE(MAX(created_at), p.created_at) FROM activity_events WHERE provider_id = p.id) DESC,
                p.status_last_updated_at DESC,
                p.id ASC
     `);
