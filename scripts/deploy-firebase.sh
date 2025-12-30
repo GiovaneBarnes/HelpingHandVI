@@ -28,7 +28,7 @@ firebase deploy --only hosting
 
 # Build and deploy API to Cloud Run
 echo "🚀 Building and deploying API to Cloud Run..."
-cd apps/api && gcloud builds submit --tag gcr.io/$(gcloud config get-value project)/helpinghand-api . && cd ../..
+cd apps/api && gcloud builds submit --tag gcr.io/$(gcloud config get-value project)/helpinghand-api --dockerfile=../docker/Dockerfile.api . && cd ../..
 gcloud run deploy helpinghand-api \
   --image gcr.io/$(gcloud config get-value project)/helpinghand-api \
   --platform managed \

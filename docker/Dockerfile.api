@@ -14,10 +14,10 @@ RUN pnpm install --prod
 
 # Copy built application
 COPY apps/api/dist ./dist
-COPY apps/api/run-migrations.js ./
+COPY ../scripts/run-migrations.js ./
 
 # Copy database migrations and seeds
-COPY database ./database
+COPY ../database ./database
 
 # Create non-root user
 RUN addgroup -g 1001 -S nodejs

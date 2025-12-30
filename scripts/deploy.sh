@@ -37,7 +37,7 @@ echo "✅ Builds completed successfully"
 
 echo "🗄️  Setting up database..."
 cd apps/api
-node run-migrations.js
+node ../../scripts/run-migrations.js
 cd ../..
 
 echo "🌐 Starting production servers..."
