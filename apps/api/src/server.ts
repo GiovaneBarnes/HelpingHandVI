@@ -31,13 +31,23 @@ declare global {
 
 const app = express();
 
+app.set("etag", false);
+
+app.use((req, res, next) => {
+  if (req.path.startsWith("/api/me")) {
+    res.setHeader("Cache-Control", "no-store");
+    res.setHeader("Vary", "Authorization");
+  }
+  next();
+});
+
 export { app };
 const port = parseInt(process.env.PORT || '3000', 10);
 
 const { Pool } = pg;
 // Allow pool to be overridden for testing
 let pool: any = new Pool({
-  connectionString: process.env.DATABASE_URL || 'postgresql://localhost:5432/virgin_islands_providers'
+  connectionString: process.env.DATABASE_URL_CLOUDSQL || process.env.DATABASE_URL || 'postgresql://localhost:5432/virgin_islands_providers'
 });
 
 // Export pool for testing
@@ -250,18 +260,101 @@ class AuditService {
 
 export { AuditService };
 
-// Admin auth middleware with actor extraction
-const adminAuth = (req: Request, res: Response, next: NextFunction) => {
-  const key = req.headers['x-admin-key'];
-  if (key !== process.env.ADMIN_KEY) {
-    return res.status(401).json({ error: 'Unauthorized' });
+// Admin auth middleware with Firebase token validation
+const adminAuth = async (req: Request, res: Response, next: NextFunction) => {
+  const authHeader = req.headers.authorization;
+
+  if (!authHeader || !authHeader.startsWith("Bearer ")) {
+    console.log("Admin auth failed: Missing or invalid Authorization header");
+    return res.status(401).json({
+      error: { code: "MISSING_AUTH_HEADER", message: "Authorization header required" },
+    });
   }
-  // Extract admin actor from key (use last 8 chars as identifier, never store full key)
-  req.adminActor = (key as string).slice(-8);
-  next();
+
+  const token = authHeader.substring("Bearer ".length).trim();
+
+  if (!token) {
+    console.log("Admin auth failed: Missing Bearer token");
+    return res.status(401).json({
+      error: { code: "MISSING_TOKEN", message: "Bearer token required" },
+    });
+  }
+
+  try {
+    console.log("Admin auth: Attempting Firebase token validation");
+    const decodedToken = await admin.auth().verifyIdToken(token);
+    console.log("Admin auth: Firebase token decoded:", {
+      uid: decodedToken?.uid,
+      email: decodedToken?.email,
+    });
+
+    const firebaseUid = decodedToken?.uid;
+    const firebaseEmail = decodedToken?.email;
+
+    // ✅ If uid is missing, treat as invalid token (prevents .slice crash)
+    if (!firebaseUid) {
+      console.log("Admin auth failed: Decoded token missing uid");
+      return res.status(401).json({
+        error: { code: "INVALID_TOKEN", message: "Invalid token payload (missing uid)" },
+      });
+    }
+
+    // Check if user has admin role in Firebase custom claims
+    const isAdminClaim = decodedToken.admin === true || decodedToken.role === "admin";
+    console.log("Admin auth: Firebase admin claims check:", isAdminClaim);
+
+    // Helper to set actor safely
+    const setActorAndNext = (source: string) => {
+      req.adminActor = firebaseUid.length >= 8 ? firebaseUid.slice(-8) : firebaseUid;
+      console.log(`Admin auth successful via ${source} for actor:`, req.adminActor);
+      next();
+    };
+
+    if (isAdminClaim) {
+      return setActorAndNext("Firebase claims");
+    }
+
+    // Fallback: Check database for admin status (prefer uid, also allow email)
+    console.log("Admin auth: Checking database for admin status");
+
+    let isDbAdmin = false;
+
+    // ✅ Check by UID first
+    const byUid = await pool.query(
+      "SELECT 1 FROM providers WHERE firebase_uid = $1 AND is_admin = true LIMIT 1",
+      [firebaseUid]
+    );
+    isDbAdmin = byUid.rows.length > 0;
+
+    // ✅ If not admin by UID, try email (if available)
+    if (!isDbAdmin && firebaseEmail) {
+      const byEmail = await pool.query(
+        "SELECT 1 FROM providers WHERE email = $1 AND is_admin = true LIMIT 1",
+        [firebaseEmail]
+      );
+      isDbAdmin = byEmail.rows.length > 0;
+    }
+
+    console.log("Admin auth: Database admin check result:", isDbAdmin);
+
+    if (isDbAdmin) {
+      return setActorAndNext("database");
+    }
+
+    console.log("Admin auth failed: User is not admin (checked both Firebase claims and database)");
+    return res.status(403).json({
+      error: { code: "INSUFFICIENT_PERMISSIONS", message: "Admin access required" },
+    });
+  } catch (error) {
+    console.log("Admin auth failed: Token validation error:", error);
+    return res.status(401).json({
+      error: { code: "INVALID_TOKEN", message: "Invalid or expired token" },
+    });
+  }
 };
 
 export { adminAuth };
+
 
 // Provider auth middleware
 const providerAuth = async (req: Request, res: Response, next: NextFunction) => {
@@ -277,14 +370,35 @@ const providerAuth = async (req: Request, res: Response, next: NextFunction) => 
     const decodedToken = await admin.auth().verifyIdToken(token);
     console.log('Firebase token decoded:', decodedToken.uid);
     const firebaseUid = decodedToken.uid;
+    const firebaseEmail = decodedToken.email;
 
     // Look up provider by Firebase UID
     console.log('Looking up provider with firebase_uid:', firebaseUid);
-    const result = await pool.query(
+    let result = await pool.query(
       'SELECT id FROM providers WHERE firebase_uid = $1 AND lifecycle_status != \'ARCHIVED\'',
       [firebaseUid]
     );
-    console.log('Provider lookup result:', result.rows.length);
+    console.log('Provider lookup result by firebase_uid:', result.rows.length);
+
+    if (result.rows.length === 0 && firebaseEmail) {
+      // Try to find by email and link the firebase_uid
+      console.log('No provider found by firebase_uid, trying email:', firebaseEmail);
+      result = await pool.query(
+        'SELECT id FROM providers WHERE email = $1 AND lifecycle_status != \'ARCHIVED\'',
+        [firebaseEmail]
+      );
+      console.log('Provider lookup result by email:', result.rows.length);
+
+      if (result.rows.length > 0) {
+        // Link the Firebase UID to the existing provider
+        const providerId = result.rows[0].id;
+        await pool.query(
+          'UPDATE providers SET firebase_uid = $1 WHERE id = $2',
+          [firebaseUid, providerId]
+        );
+        console.log('Linked Firebase UID to existing provider:', providerId);
+      }
+    }
 
     if (result.rows.length === 0) {
       return res.status(401).json({ error: 'Provider not found for this Firebase user' });
@@ -329,7 +443,7 @@ app.use(cors({
 
 app.use(express.json());
 
-app.get('/health', async (req, res) => {
+app.get('/api/health', async (req, res) => {
   const checks = {
     database: { status: 'unknown', details: null as any },
     providers: { status: 'unknown', details: null as any },
@@ -480,7 +594,7 @@ app.get('/health', async (req, res) => {
   });
 });
 
-app.get('/areas', async (req: Request, res: Response) => {
+app.get('/api/areas', async (req: Request, res: Response) => {
   try {
     const { island } = req.query;
     if (!island || typeof island !== 'string') {
@@ -504,7 +618,7 @@ app.get('/areas', async (req: Request, res: Response) => {
   }
 });
 
-app.get('/categories', async (req: Request, res: Response) => {
+app.get('/api/categories', async (req: Request, res: Response) => {
   try {
     const result = await pool.query('SELECT id, name FROM categories ORDER BY name');
     res.json(result.rows);
@@ -514,7 +628,7 @@ app.get('/categories', async (req: Request, res: Response) => {
   }
 });
 
-app.get('/providers', async (req: Request, res: Response) => {
+app.get('/api/providers', async (req: Request, res: Response) => {
   try {
     const { status, island, categoryId, areaId, limit: limitParam, cursor: cursorParam } = req.query;
 
@@ -586,7 +700,7 @@ app.get('/providers', async (req: Request, res: Response) => {
                        EXISTS (SELECT 1 FROM provider_badges WHERE provider_id = p.id AND badge = 'EMERGENCY_READY')
                   THEN 1 ELSE 0 END as emergency_boost_eligible,
              (SELECT COALESCE(json_agg(pb.badge), '[]'::json) FROM provider_badges pb WHERE pb.provider_id = p.id) as badges,
-             (SELECT array_agg(c.name) FROM categories c JOIN provider_categories pc ON c.id = pc.category_id WHERE pc.provider_id = p.id) as categories,
+             (SELECT array_agg(jsonb_build_object('id', c.id, 'name', c.name)) FROM categories c JOIN provider_categories pc ON c.id = pc.category_id WHERE pc.provider_id = p.id) as categories,
              -- Contact preference flags for backward compatibility
              CASE WHEN p.contact_preference IN ('PHONE', 'BOTH') THEN true ELSE false END as contact_call_enabled,
              CASE WHEN p.contact_preference IN ('PHONE', 'BOTH') THEN true ELSE false END as contact_sms_enabled,
@@ -776,7 +890,7 @@ app.get('/providers', async (req: Request, res: Response) => {
   }
 });
 
-app.get('/providers/:id', async (req, res) => {
+app.get('/api/providers/:id', async (req, res) => {
   try {
     const { id } = req.params;
     const query = `
@@ -819,7 +933,7 @@ app.get('/providers/:id', async (req, res) => {
   }
 });
 
-app.post('/providers', async (req, res) => {
+app.post('/api/providers', async (req, res) => {
   try {
     const {
       name,
@@ -882,8 +996,12 @@ app.post('/providers', async (req, res) => {
       // Calculate trial days left
       const trialDaysLeft = Math.max(0, Math.ceil((trialEnd.getTime() - Date.now()) / (1000 * 60 * 60 * 24)));
 
-      // Log the signup/login activity
-      await ActivityService.logEvent(providerId, 'LOGIN');
+      // Log the signup/login activity (best effort)
+      try {
+        await ActivityService.logEvent(providerId, 'LOGIN');
+      } catch (e) {
+        console.warn('Failed to log activity event:', e);
+      }
 
       res.status(201).json({
         id: providerId,
@@ -906,7 +1024,7 @@ app.post('/providers', async (req, res) => {
   }
 });
 
-app.post('/login', async (req, res) => {
+app.post('/api/login', async (req, res) => {
   try {
     const { email, password } = req.body;
 
@@ -932,8 +1050,12 @@ app.post('/login', async (req, res) => {
       return res.status(401).json({ error: 'Invalid email or password' });
     }
 
-    // Log the login activity
-    await ActivityService.logEvent(provider.id, 'LOGIN');
+    // Log the login activity (best effort)
+    try {
+      await ActivityService.logEvent(provider.id, 'LOGIN');
+    } catch (e) {
+      console.warn('Failed to log activity event:', e);
+    }
 
     res.json({
       id: provider.id,
@@ -946,7 +1068,7 @@ app.post('/login', async (req, res) => {
   }
 });
 
-app.post('/forgot-password', async (req, res) => {
+app.post('/api/forgot-password', async (req, res) => {
   try {
     const { email } = req.body;
 
@@ -982,7 +1104,7 @@ app.post('/forgot-password', async (req, res) => {
   }
 });
 
-app.post('/reset-password', async (req, res) => {
+app.post('/api/reset-password', async (req, res) => {
   try {
     const { token, password } = req.body;
 
@@ -1024,7 +1146,7 @@ app.post('/reset-password', async (req, res) => {
   }
 });
 
-app.put('/providers/:id', async (req, res) => {
+app.put('/api/providers/:id', async (req, res) => {
   try {
     const { id } = req.params;
     const {
@@ -1150,15 +1272,19 @@ app.put('/providers/:id', async (req, res) => {
   }
 });
 
-app.put('/providers/:id/status', async (req, res) => {
+app.put('/api/providers/:id/status', async (req, res) => {
   try {
     const { id } = req.params;
     const { status } = req.body;
     await pool.query('UPDATE providers SET status = $1, last_updated_at = CURRENT_TIMESTAMP WHERE id = $2', [status, id]);
     
-    // Log appropriate activity event
+    // Log appropriate activity event (best effort)
     const eventType = status === 'OPEN_NOW' ? 'STATUS_OPEN_FOR_WORK' : 'STATUS_UPDATED';
-    await ActivityService.logEvent(parseInt(id), eventType);
+    try {
+      await ActivityService.logEvent(parseInt(id), eventType);
+    } catch (e) {
+      console.warn('Failed to log activity event:', e);
+    }
     
     // Check and update verification status after activity (skip in tests)
     if (process.env.NODE_ENV !== 'test') {
@@ -1172,7 +1298,7 @@ app.put('/providers/:id/status', async (req, res) => {
   }
 });
 
-app.post('/providers/:id/customer-interaction', async (req, res) => {
+app.post('/api/providers/:id/customer-interaction', async (req, res) => {
   try {
     const { id } = req.params;
     const { type } = req.body; // 'call', 'sms'
@@ -1183,7 +1309,12 @@ app.post('/providers/:id/customer-interaction', async (req, res) => {
     
     const eventType = type === 'call' ? 'CUSTOMER_CALL' : 'CUSTOMER_SMS';
     
-    await ActivityService.logEvent(parseInt(id), eventType);
+    // Log activity (best effort)
+    try {
+      await ActivityService.logEvent(parseInt(id), eventType);
+    } catch (e) {
+      console.warn('Failed to log activity event:', e);
+    }
     
     // Check and update verification status after interaction (skip in tests)
     if (process.env.NODE_ENV !== 'test') {
@@ -1197,10 +1328,15 @@ app.post('/providers/:id/customer-interaction', async (req, res) => {
   }
 });
 
-app.post('/providers/:id/profile-view', async (req, res) => {
+app.post('/api/providers/:id/profile-view', async (req, res) => {
   try {
     const { id } = req.params;
-    await ActivityService.logEvent(parseInt(id), 'PROFILE_VIEW');
+    // Log activity (best effort)
+    try {
+      await ActivityService.logEvent(parseInt(id), 'PROFILE_VIEW');
+    } catch (e) {
+      console.warn('Failed to log activity event:', e);
+    }
     
     // Check and update verification status after view (skip in tests)
     if (process.env.NODE_ENV !== 'test') {
@@ -1214,10 +1350,15 @@ app.post('/providers/:id/profile-view', async (req, res) => {
   }
 });
 
-app.post('/providers/:id/login', async (req, res) => {
+app.post('/api/providers/:id/login', async (req, res) => {
   try {
     const { id } = req.params;
-    await ActivityService.logEvent(parseInt(id), 'LOGIN');
+    // Log activity (best effort)
+    try {
+      await ActivityService.logEvent(parseInt(id), 'LOGIN');
+    } catch (e) {
+      console.warn('Failed to log activity event:', e);
+    }
     
     // Check and update verification status after login (skip in tests)
     if (process.env.NODE_ENV !== 'test') {
@@ -1231,7 +1372,7 @@ app.post('/providers/:id/login', async (req, res) => {
   }
 });
 
-app.get('/providers/:id/insights', async (req, res) => {
+app.get('/api/providers/:id/insights', async (req, res) => {
   try {
     const { id } = req.params;
     const { range = '7d' } = req.query;
@@ -1262,7 +1403,7 @@ app.get('/providers/:id/insights', async (req, res) => {
   }
 });
 
-app.get('/me', providerAuth, async (req, res) => {
+app.get('/api/me', providerAuth, async (req, res) => {
   try {
     const providerId = req.providerId!;
     
@@ -1273,7 +1414,7 @@ app.get('/me', providerAuth, async (req, res) => {
         p.island,
         p.phone,
         p.email,
-        p.profile->>'description' as description,
+        p.description,
         p.status,
         p.last_updated_at,
         p.lifecycle_status,
@@ -1285,8 +1426,8 @@ app.get('/me', providerAuth, async (req, res) => {
         COALESCE(p.contact_call_enabled, true) as contact_call_enabled,
         COALESCE(p.contact_sms_enabled, true) as contact_sms_enabled,
         COALESCE(p.emergency_calls_accepted, false) as emergency_calls_accepted,
-        COALESCE(array_agg(DISTINCT c.name) FILTER (WHERE c.name IS NOT NULL), ARRAY[]::text[]) as categories,
-        COALESCE(array_agg(DISTINCT a.name) FILTER (WHERE a.name IS NOT NULL), ARRAY[]::text[]) as areas,
+        COALESCE(array_agg(DISTINCT jsonb_build_object('id', c.id, 'name', c.name)) FILTER (WHERE c.id IS NOT NULL), ARRAY[]::jsonb[]) as categories,
+        COALESCE(array_agg(DISTINCT jsonb_build_object('id', a.id, 'name', a.name)) FILTER (WHERE a.id IS NOT NULL), ARRAY[]::jsonb[]) as areas,
         COALESCE(array_agg(DISTINCT pb.badge::text) FILTER (WHERE pb.badge IS NOT NULL), ARRAY[]::text[]) as badges
       FROM providers p
       LEFT JOIN provider_categories pc ON p.id = pc.provider_id
@@ -1322,11 +1463,16 @@ app.get('/me', providerAuth, async (req, res) => {
       plan: provider.plan,
       plan_source: provider.plan_source,
       trial_end_at: provider.trial_end_at,
+      is_premium_active: provider.plan === 'PREMIUM',
+      is_trial: provider.plan_source === 'TRIAL',
+      trial_days_left: provider.trial_end_at ? Math.max(0, Math.ceil((new Date(provider.trial_end_at).getTime() - Date.now()) / (1000 * 60 * 60 * 24))) : 0,
       contact_preference: provider.contact_preference,
       contact_call_enabled: provider.contact_call_enabled,
       contact_sms_enabled: provider.contact_sms_enabled,
       emergency_calls_accepted: provider.emergency_calls_accepted
     };
+    
+    console.log('GET /api/me response for providerId:', providerId, 'description:', response.description, 'categories:', response.categories);
     
     res.json(response);
   } catch (error) {
@@ -1335,7 +1481,7 @@ app.get('/me', providerAuth, async (req, res) => {
   }
 });
 
-app.put('/me/status', providerAuth, async (req, res) => {
+app.put('/api/me/status', providerAuth, async (req, res) => {
   try {
     const providerId = req.providerId!;
     const { status } = req.body;
@@ -1346,8 +1492,12 @@ app.put('/me/status', providerAuth, async (req, res) => {
     
     await pool.query("UPDATE providers SET status = $1, status_last_updated_at = CURRENT_TIMESTAMP WHERE id = $2", [status, providerId]);
     
-    // Log activity
-    await ActivityService.logEvent(providerId, 'STATUS_UPDATE');
+    // Log activity (best effort - don't fail the request if logging fails)
+    try {
+      await ActivityService.logEvent(providerId, 'STATUS_UPDATE');
+    } catch (e) {
+      console.warn('Failed to log activity event:', e);
+    }
     
     // Return updated provider data
     const result = await pool.query(`
@@ -1359,24 +1509,30 @@ app.put('/me/status', providerAuth, async (req, res) => {
         p.email,
         p.description,
         p.status,
-        p.last_active_at,
+        (SELECT COALESCE(MAX(created_at), p.created_at) FROM activity_events WHERE provider_id = p.id) as last_active_at,
         p.updated_at,
-        p.trust_tier,
+        CASE
+          WHEN EXISTS (SELECT 1 FROM provider_badges WHERE provider_id = p.id AND badge = 'GOV_APPROVED') THEN 3
+          WHEN EXISTS (SELECT 1 FROM provider_badges WHERE provider_id = p.id AND badge = 'VERIFIED') THEN 2
+          ELSE 1
+        END as trust_tier,
         p.lifecycle_status,
         p.is_disputed,
         p.plan,
         p.plan_source,
         p.trial_end_at,
-        p.is_premium_active,
-        p.trial_days_left,
-        p.is_trial,
-        p.emergency_boost_eligible,
+        (p.plan = 'PREMIUM' AND (p.plan_source != 'TRIAL' OR p.trial_end_at > NOW())) as is_premium_active,
+        CASE WHEN p.trial_end_at > NOW() THEN CEIL(EXTRACT(EPOCH FROM (p.trial_end_at - NOW())) / 86400) ELSE 0 END as trial_days_left,
+        CASE WHEN p.plan_source = 'TRIAL' AND p.trial_end_at > NOW() THEN true ELSE false END as is_trial,
+        CASE WHEN (p.plan = 'PREMIUM' AND (p.plan_source != 'TRIAL' OR p.trial_end_at > NOW())) AND
+                  EXISTS (SELECT 1 FROM provider_badges WHERE provider_id = p.id AND badge = 'EMERGENCY_READY')
+             THEN 1 ELSE 0 END as emergency_boost_eligible,
         p.contact_preference,
         COALESCE(p.contact_call_enabled, true) as contact_call_enabled,
         COALESCE(p.contact_sms_enabled, true) as contact_sms_enabled,
         COALESCE(p.emergency_calls_accepted, false) as emergency_calls_accepted,
-        COALESCE(array_agg(DISTINCT c.name) FILTER (WHERE c.name IS NOT NULL), ARRAY[]::text[]) as categories,
-        COALESCE(array_agg(DISTINCT a.name) FILTER (WHERE a.name IS NOT NULL), ARRAY[]::text[]) as areas,
+        COALESCE(array_agg(DISTINCT jsonb_build_object('id', c.id, 'name', c.name)) FILTER (WHERE c.id IS NOT NULL), ARRAY[]::jsonb[]) as categories,
+        COALESCE(array_agg(DISTINCT jsonb_build_object('id', a.id, 'name', a.name)) FILTER (WHERE a.id IS NOT NULL), ARRAY[]::jsonb[]) as areas,
         COALESCE(array_agg(DISTINCT pb.badge::text) FILTER (WHERE pb.badge IS NOT NULL), ARRAY[]::text[]) as badges
       FROM providers p
       LEFT JOIN provider_categories pc ON p.id = pc.provider_id
@@ -1429,124 +1585,149 @@ app.put('/me/status', providerAuth, async (req, res) => {
   }
 });
 
-app.put('/me/profile', providerAuth, async (req, res) => {
+app.put('/api/me/profile', providerAuth, async (req, res) => {
   try {
     const providerId = req.providerId!;
-    const { phone, description, categories, areas, contact_preference } = req.body;
+    const { phone, description, categories, areas, contact_preference, categoryIds } = req.body;
     
-    // Update basic fields
-    await pool.query(`
-      UPDATE providers 
-      SET phone = $1, description = $2, contact_preference = $3, updated_at = CURRENT_TIMESTAMP
-      WHERE id = $4
-    `, [phone, description, contact_preference, providerId]);
+    console.log('PUT /api/me/profile providerId:', providerId);
+    console.log('PUT /api/me/profile req.body:', req.body);
     
-    // Update categories
-    if (categories) {
-      await pool.query('DELETE FROM provider_categories WHERE provider_id = $1', [providerId]);
-      for (const categoryName of categories) {
-        const categoryResult = await pool.query('SELECT id FROM categories WHERE name = $1', [categoryName]);
-        if (categoryResult.rows.length > 0) {
-          await pool.query('INSERT INTO provider_categories (provider_id, category_id) VALUES ($1, $2)', [providerId, categoryResult.rows[0].id]);
+    // Accept either {categoryIds:[..]} or {categories:[{id,..}]}
+    const categoryIdsToUse =
+      Array.isArray(req.body.categoryIds)
+        ? req.body.categoryIds
+        : Array.isArray(req.body.categories)
+          ? req.body.categories.map((c: any) => c?.id).filter(Boolean)
+          : [];
+    
+    console.log('categoryIdsToUse:', categoryIdsToUse);
+    
+    const client = await pool.connect();
+    try {
+      await client.query("BEGIN");
+      
+      // Update basic fields
+      await client.query(`
+        UPDATE providers 
+        SET phone = $1, description = $2, contact_preference = $3, updated_at = CURRENT_TIMESTAMP
+        WHERE id = $4
+      `, [phone, description, contact_preference, providerId]);
+      
+      // Update categories
+      const deleteResult = await client.query('DELETE FROM provider_categories WHERE provider_id = $1', [providerId]);
+      console.log('DELETE provider_categories rowCount:', deleteResult.rowCount);
+      
+      if (categoryIdsToUse.length > 0) {
+        const insertResult = await client.query(
+          `
+          INSERT INTO provider_categories (provider_id, category_id)
+          SELECT $1, unnest($2::int[])
+          ON CONFLICT DO NOTHING
+          `,
+          [providerId, categoryIdsToUse]
+        );
+        console.log('INSERT provider_categories rowCount:', insertResult.rowCount);
+      } else {
+        console.log('No categories to insert');
+      }
+      
+      // Update areas
+      if (areas) {
+        await client.query('DELETE FROM provider_areas WHERE provider_id = $1', [providerId]);
+        for (const areaName of areas) {
+          const areaResult = await client.query('SELECT id FROM areas WHERE name = $1', [areaName]);
+          if (areaResult.rows.length > 0) {
+            await client.query('INSERT INTO provider_areas (provider_id, area_id) VALUES ($1, $2)', [providerId, areaResult.rows[0].id]);
+          }
         }
       }
+      
+      await client.query("COMMIT");
+      
+      // Return updated provider data
+      const result = await client.query(`
+        SELECT p.*,
+               COALESCE(json_agg(json_build_object('id', c.id, 'name', c.name))
+                        FILTER (WHERE c.id IS NOT NULL), '[]') AS categories
+        FROM providers p
+        LEFT JOIN provider_categories pc ON pc.provider_id = p.id
+        LEFT JOIN categories c ON c.id = pc.category_id
+        WHERE p.id = $1
+        GROUP BY p.id
+      `, [providerId]);
+      
+      res.json(result.rows[0]);
+    } catch (e: any) {
+      await client.query("ROLLBACK");
+      throw e;
+    } finally {
+      client.release();
     }
     
-    // Update areas
-    if (areas) {
-      await pool.query('DELETE FROM provider_areas WHERE provider_id = $1', [providerId]);
-      for (const areaName of areas) {
-        const areaResult = await pool.query('SELECT id FROM areas WHERE name = $1', [areaName]);
-        if (areaResult.rows.length > 0) {
-          await pool.query('INSERT INTO provider_areas (provider_id, area_id) VALUES ($1, $2)', [providerId, areaResult.rows[0].id]);
-        }
-      }
+    // Log activity (best effort - don't fail the request if logging fails)
+    try {
+      await ActivityService.logEvent(providerId, 'PROFILE_UPDATE');
+    } catch (e) {
+      console.warn('Failed to log activity event:', e);
     }
-    
-    // Log activity
-    await ActivityService.logEvent(providerId, 'PROFILE_UPDATE');
-    
-    // Return updated provider data
-    const result = await pool.query(`
-      SELECT 
-        p.id,
-        p.name,
-        p.island,
-        p.phone,
-        p.email,
-        p.description,
-        p.status,
-        p.last_active_at,
-        p.updated_at,
-        p.trust_tier,
-        p.lifecycle_status,
-        p.is_disputed,
-        p.plan,
-        p.plan_source,
-        p.trial_end_at,
-        p.is_premium_active,
-        p.trial_days_left,
-        p.is_trial,
-        p.emergency_boost_eligible,
-        p.contact_preference,
-        COALESCE(p.contact_call_enabled, true) as contact_call_enabled,
-        COALESCE(p.contact_sms_enabled, true) as contact_sms_enabled,
-        COALESCE(p.emergency_calls_accepted, false) as emergency_calls_accepted,
-        COALESCE(array_agg(DISTINCT c.name) FILTER (WHERE c.name IS NOT NULL), ARRAY[]::text[]) as categories,
-        COALESCE(array_agg(DISTINCT a.name) FILTER (WHERE a.name IS NOT NULL), ARRAY[]::text[]) as areas,
-        COALESCE(array_agg(DISTINCT pb.badge::text) FILTER (WHERE pb.badge IS NOT NULL), ARRAY[]::text[]) as badges
-      FROM providers p
-      LEFT JOIN provider_categories pc ON p.id = pc.provider_id
-      LEFT JOIN categories c ON pc.category_id = c.id
-      LEFT JOIN provider_areas pa ON p.id = pa.provider_id
-      LEFT JOIN areas a ON pa.area_id = a.id
-      LEFT JOIN provider_badges pb ON p.id = pb.provider_id
-      WHERE p.id = $1 AND p.lifecycle_status != 'ARCHIVED'
-      GROUP BY p.id
-    `, [providerId]);
-    
-    if (result.rows.length === 0) {
-      return res.status(404).json({ error: 'Provider not found' });
-    }
-    
-    const provider = result.rows[0];
-    const response = {
-      id: provider.id,
-      name: provider.name,
-      island: provider.island,
-      phone: provider.phone,
-      email: provider.email,
-      description: provider.description || '',
-      status: provider.status,
-      last_active_at: provider.last_active_at,
-      categories: provider.categories || [],
-      areas: provider.areas || [],
-      badges: provider.badges || [],
-      updated_at: provider.updated_at,
-      trust_tier: provider.trust_tier,
-      lifecycle_status: provider.lifecycle_status,
-      is_disputed: provider.is_disputed,
-      plan: provider.plan,
-      plan_source: provider.plan_source,
-      trial_end_at: provider.trial_end_at,
-      is_premium_active: provider.is_premium_active,
-      trial_days_left: provider.trial_days_left,
-      is_trial: provider.is_trial,
-      emergency_boost_eligible: provider.emergency_boost_eligible,
-      contact_preference: provider.contact_preference,
-      contact_call_enabled: provider.contact_call_enabled,
-      contact_sms_enabled: provider.contact_sms_enabled,
-      emergency_calls_accepted: provider.emergency_calls_accepted
-    };
-    
-    res.json(response);
   } catch (error) {
     console.error(error);
     res.status(500).json({ error: 'Internal server error' });
   }
 });
 
-app.post('/reports', async (req, res) => {
+app.post('/api/providers/:providerId/change-requests', providerAuth, async (req, res) => {
+  try {
+    const providerIdParam = parseInt(req.params.providerId, 10);
+    if (isNaN(providerIdParam)) {
+      return res.status(400).json({ error: 'Invalid providerId' });
+    }
+
+    const authedProviderId = req.providerId!;
+    if (authedProviderId !== providerIdParam) {
+      return res.status(403).json({ error: 'Forbidden: cannot create requests for another provider' });
+    }
+
+    const { field, requested_value, reason } = req.body;
+    if (!field || !requested_value || !reason) {
+      return res.status(400).json({ error: 'field, requested_value, and reason are required' });
+    }
+
+    const fieldMap: Record<string, string> = {
+      'NAME': 'name',
+      'LOCATION': 'island',
+      'ISLAND': 'island'
+    };
+    const dbField = fieldMap[field];
+    if (!dbField) {
+      return res.status(400).json({ error: 'Invalid field. Must be NAME, LOCATION, or ISLAND.' });
+    }
+
+    // Get current value
+    const currentResult = await pool.query('SELECT name, island FROM providers WHERE id = $1', [providerIdParam]);
+    if (currentResult.rows.length === 0) {
+      return res.status(404).json({ error: 'Provider not found' });
+    }
+    const current = currentResult.rows[0];
+    const currentValue = dbField === 'name' ? current.name : current.island;
+
+    // Insert
+    const insertResult = await pool.query(
+      `INSERT INTO change_requests (provider_id, field, current_value, requested_value, reason, status)
+       VALUES ($1, $2, $3, $4, $5, 'pending')
+       RETURNING id, provider_id, field, requested_value, reason, status, created_at`,
+      [providerIdParam, dbField, currentValue, requested_value.trim(), reason.trim()]
+    );
+
+    res.status(201).json({ ok: true, request: insertResult.rows[0] });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+app.post('/api/reports', async (req, res) => {
   try {
     const { provider_id, reason, contact } = req.body;
     await pool.query(
@@ -1560,7 +1741,7 @@ app.post('/reports', async (req, res) => {
   }
 });
 
-app.get('/admin/providers', adminAuth, async (req, res) => {
+app.get('/api/admin/providers', adminAuth, async (req, res) => {
   try {
     const { island, categoryId, status, areaId, verified, govApproved, archived, disputed } = req.query;
 
@@ -1692,7 +1873,7 @@ app.get('/admin/providers', adminAuth, async (req, res) => {
   }
 });
 
-app.put('/admin/providers/:id/verify', adminAuth, async (req, res) => {
+app.put('/api/admin/providers/:id/verify', adminAuth, async (req, res) => {
   try {
     const { id } = req.params;
     const { verified } = req.body;
@@ -1713,7 +1894,12 @@ app.put('/admin/providers/:id/verify', adminAuth, async (req, res) => {
     }
 
     await pool.query('UPDATE providers SET status_last_updated_at = CURRENT_TIMESTAMP WHERE id = $1', [id]);
-    await ActivityService.logEvent(parseInt(id), 'VERIFIED');
+    // Log activity (best effort)
+    try {
+      await ActivityService.logEvent(parseInt(id), 'VERIFIED');
+    } catch (e) {
+      console.warn('Failed to log activity event:', e);
+    }
 
     // Log audit event
     const badgeText = verified ? 'VERIFIED' : 'unverified';
@@ -1731,7 +1917,7 @@ app.put('/admin/providers/:id/verify', adminAuth, async (req, res) => {
   }
 });
 
-app.put('/admin/providers/:id/gov-approve', adminAuth, async (req, res) => {
+app.put('/api/admin/providers/:id/gov-approve', adminAuth, async (req, res) => {
   try {
     const { id } = req.params;
     const { approved } = req.body;
@@ -1752,7 +1938,12 @@ app.put('/admin/providers/:id/gov-approve', adminAuth, async (req, res) => {
     }
 
     await pool.query('UPDATE providers SET status_last_updated_at = CURRENT_TIMESTAMP WHERE id = $1', [id]);
-    await ActivityService.logEvent(parseInt(id), 'GOV_APPROVED');
+    // Log activity (best effort)
+    try {
+      await ActivityService.logEvent(parseInt(id), 'GOV_APPROVED');
+    } catch (e) {
+      console.warn('Failed to log activity event:', e);
+    }
 
     // Log audit event
     const badgeText = approved ? 'GOV_APPROVED' : 'government unapproved';
@@ -1770,7 +1961,7 @@ app.put('/admin/providers/:id/gov-approve', adminAuth, async (req, res) => {
   }
 });
 
-app.put('/admin/providers/:id/archive', adminAuth, async (req, res) => {
+app.put('/api/admin/providers/:id/archive', adminAuth, async (req, res) => {
   try {
     const { id } = req.params;
 
@@ -1786,7 +1977,12 @@ app.put('/admin/providers/:id/archive', adminAuth, async (req, res) => {
     const isArchiving = newStatus === 'ARCHIVED';
 
     await pool.query("UPDATE providers SET lifecycle_status = $1, status_last_updated_at = CURRENT_TIMESTAMP WHERE id = $2", [newStatus, id]);
-    await ActivityService.logEvent(parseInt(id), 'ARCHIVED');
+    // Log activity (best effort)
+    try {
+      await ActivityService.logEvent(parseInt(id), 'ARCHIVED');
+    } catch (e) {
+      console.warn('Failed to log activity event:', e);
+    }
 
     // Log audit event
     const actionType = isArchiving ? 'ARCHIVE' : 'UNARCHIVE';
@@ -1804,7 +2000,7 @@ app.put('/admin/providers/:id/archive', adminAuth, async (req, res) => {
   }
 });
 
-app.delete('/admin/providers/:id', adminAuth, async (req, res) => {
+app.delete('/api/admin/providers/:id', adminAuth, async (req, res) => {
   try {
     const { id } = req.params;
 
@@ -1843,7 +2039,7 @@ app.delete('/admin/providers/:id', adminAuth, async (req, res) => {
   }
 });
 
-app.patch('/admin/providers/:id/disputed', adminAuth, async (req, res) => {
+app.patch('/api/admin/providers/:id/disputed', adminAuth, async (req, res) => {
   try {
     const { id } = req.params;
     const { isDisputed, notes } = req.body;
@@ -1870,7 +2066,7 @@ app.patch('/admin/providers/:id/disputed', adminAuth, async (req, res) => {
   }
 });
 
-app.post('/admin/jobs/recompute-provider-lifecycle', adminAuth, async (req, res) => {
+app.post('/api/admin/jobs/recompute-provider-lifecycle', adminAuth, async (req, res) => {
   try {
     // Recompute lifecycle status based on activity patterns
     const query = `
@@ -1910,7 +2106,7 @@ app.post('/admin/jobs/recompute-provider-lifecycle', adminAuth, async (req, res)
   }
 });
 
-app.post('/admin/jobs/expire-trials', adminAuth, async (req, res) => {
+app.post('/api/admin/jobs/expire-trials', adminAuth, async (req, res) => {
   try {
     // Find expired trial providers and downgrade them
     const expiredTrialsQuery = `
@@ -1942,7 +2138,7 @@ app.post('/admin/jobs/expire-trials', adminAuth, async (req, res) => {
   }
 });
 
-app.get('/admin/reports', adminAuth, async (req, res) => {
+app.get('/api/admin/reports', adminAuth, async (req, res) => {
   try {
     const { status, type } = req.query;
 
@@ -1980,7 +2176,7 @@ app.get('/admin/reports', adminAuth, async (req, res) => {
   }
 });
 
-app.patch('/admin/reports/:id', adminAuth, async (req, res) => {
+app.patch('/api/admin/reports/:id', adminAuth, async (req, res) => {
   try {
     const { id } = req.params;
     const { status, adminNotes } = req.body;
@@ -2012,7 +2208,7 @@ app.patch('/admin/reports/:id', adminAuth, async (req, res) => {
 });
 
 // Emergency mode endpoints
-app.get('/settings/emergency-mode', async (req, res) => {
+app.get('/api/settings/emergency-mode', async (req, res) => {
   try {
     const result = await pool.query('SELECT value FROM app_settings WHERE key = $1', ['emergency_mode']);
     const emergencyMode = result.rows[0]?.value?.enabled || false;
@@ -2032,7 +2228,7 @@ app.get('/settings/emergency-mode', async (req, res) => {
   }
 });
 
-app.patch('/admin/settings/emergency-mode', adminAuth, async (req, res) => {
+app.patch('/api/admin/settings/emergency-mode', adminAuth, async (req, res) => {
   try {
     const { enabled, notes } = req.body;
 
@@ -2118,7 +2314,7 @@ app.post('/providers/:id/change-requests', async (req: Request, res: Response) =
 });
 
 // Get change requests (admin only)
-app.get('/admin/change-requests', adminAuth, async (req: Request, res: Response) => {
+app.get('/api/admin/change-requests', adminAuth, async (req: Request, res: Response) => {
   try {
     const { status, limit = 50, offset = 0 } = req.query;
 
@@ -2171,7 +2367,7 @@ app.get('/admin/change-requests', adminAuth, async (req: Request, res: Response)
 });
 
 // Approve or reject change request (admin only)
-app.patch('/admin/change-requests/:id', adminAuth, async (req: Request, res: Response) => {
+app.patch('/api/admin/change-requests/:id', adminAuth, async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
     const { action, admin_notes } = req.body;
@@ -2356,6 +2552,106 @@ if (process.env.NODE_ENV !== 'test') {
 
         console.log('Contact preference migration completed successfully');
       }
+
+      // Check if status_last_updated_at column exists
+      const statusLastUpdatedCheck = await pool.query(`
+        SELECT column_name
+        FROM information_schema.columns
+        WHERE table_name = 'providers' AND column_name = 'status_last_updated_at'
+      `);
+
+      if (statusLastUpdatedCheck.rows.length === 0) {
+        console.log('Applying status_last_updated_at migration...');
+
+        // Add column
+        await pool.query(`
+          ALTER TABLE providers ADD COLUMN status_last_updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL;
+        `);
+
+        console.log('Status last updated migration completed successfully');
+      }
+
+      // Check if activity_events table has event_type column
+      const activityEventsCheck = await pool.query(`
+        SELECT column_name
+        FROM information_schema.columns
+        WHERE table_name = 'activity_events' AND column_name = 'event_type'
+      `);
+
+      if (activityEventsCheck.rows.length === 0) {
+        console.log('Applying activity_events event_type migration...');
+
+        // First, ensure the enum type exists
+        await pool.query(`
+          DO $$ BEGIN
+            CREATE TYPE activity_event_type AS ENUM (
+              'PROFILE_UPDATED',
+              'STATUS_UPDATED',
+              'VERIFIED',
+              'ARCHIVED',
+              'PROFILE_VIEW',
+              'STATUS_UPDATE',
+              'LOGIN',
+              'CUSTOMER_CALL',
+              'CUSTOMER_SMS',
+              'CUSTOMER_WHATSAPP',
+              'STATUS_OPEN_FOR_WORK'
+            );
+          EXCEPTION
+            WHEN duplicate_object THEN null;
+          END $$;
+        `);
+
+        // Add missing enum values if they don't exist
+        const enumValues = ['PROFILE_VIEW', 'LOGIN', 'CUSTOMER_CALL', 'CUSTOMER_SMS', 'CUSTOMER_WHATSAPP', 'STATUS_OPEN_FOR_WORK'];
+        for (const value of enumValues) {
+          await pool.query(`ALTER TYPE activity_event_type ADD VALUE '${value}'`).catch(() => {}); // Ignore if already exists
+        }
+
+        // Check if type column exists (old structure)
+        const typeColumnCheck = await pool.query(`
+          SELECT column_name
+          FROM information_schema.columns
+          WHERE table_name = 'activity_events' AND column_name = 'type'
+        `);
+
+        if (typeColumnCheck.rows.length > 0) {
+          // Migrate from old structure
+          await pool.query(`ALTER TABLE activity_events ADD COLUMN event_type activity_event_type`);
+          await pool.query(`
+            UPDATE activity_events SET event_type =
+              CASE
+                WHEN type = 'PROFILE_UPDATED' THEN 'PROFILE_UPDATED'::activity_event_type
+                WHEN type = 'STATUS_UPDATED' THEN 'STATUS_UPDATED'::activity_event_type
+                WHEN type = 'VERIFIED' THEN 'VERIFIED'::activity_event_type
+                WHEN type = 'ARCHIVED' THEN 'ARCHIVED'::activity_event_type
+                ELSE 'PROFILE_UPDATED'::activity_event_type
+              END
+          `);
+          await pool.query(`ALTER TABLE activity_events ALTER COLUMN event_type SET NOT NULL`);
+        } else {
+          // Create new table structure
+          await pool.query(`
+            CREATE TABLE IF NOT EXISTS activity_events_new (
+              id SERIAL PRIMARY KEY,
+              provider_id INTEGER NOT NULL REFERENCES providers(id) ON DELETE CASCADE,
+              event_type activity_event_type NOT NULL,
+              created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+            )
+          `);
+          // Copy data if table exists
+          await pool.query(`
+            INSERT INTO activity_events_new (id, provider_id, event_type, created_at)
+            SELECT id, provider_id, 'PROFILE_UPDATED'::activity_event_type, created_at
+            FROM activity_events
+            WHERE event_type IS NULL
+          `).catch(() => {}); // Ignore if no data
+          await pool.query(`DROP TABLE IF EXISTS activity_events`);
+          await pool.query(`ALTER TABLE activity_events_new RENAME TO activity_events`);
+        }
+
+        console.log('Activity events migration completed successfully');
+      }
     } catch (error) {
       console.error('Migration check failed:', error);
     }
@@ -2368,6 +2664,15 @@ if (process.env.NODE_ENV !== 'test') {
   setInterval(() => {
     VerificationService.checkAndUpdateAllProviders();
   }, 6 * 60 * 60 * 1000); // 6 hours
+  
+  // Log all registered routes for debugging
+  console.log('Registered routes:');
+  app._router.stack
+    .filter((r: any) => r.route)
+    .forEach((r: any) => {
+      const methods = Object.keys(r.route.methods).join(",").toUpperCase();
+      console.log(`${methods} ${r.route.path}`);
+    });
   
   app.listen(port, '0.0.0.0', () => {
     console.log(`Server running on http://0.0.0.0:${port}`);

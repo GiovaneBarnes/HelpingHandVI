@@ -19,4 +19,5 @@ INSERT INTO categories (name) VALUES
 ('Music'),
 ('Technology'),
 ('Fitness'),
-('Beauty Services');
+('Beauty Services')
+ON CONFLICT (name) DO NOTHING;

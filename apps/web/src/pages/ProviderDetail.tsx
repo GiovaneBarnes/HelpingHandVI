@@ -28,7 +28,7 @@ interface Provider {
   areas: Array<{ id: number; name: string; island: string }>;
 }
 
-const API_BASE = `${window.location.protocol}//${window.location.hostname}:3000`;
+const API_BASE = '/api';
 
 const getIslandDisplayName = (islandCode: string) => {
   switch (islandCode) {

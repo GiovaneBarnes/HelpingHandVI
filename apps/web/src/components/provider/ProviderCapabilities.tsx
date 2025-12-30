@@ -34,7 +34,7 @@ const getLifecycleStatusColor = (status: string) => {
   }
 };
 
-const PremiumCountdown: React.FC<{ provider: Provider }> = ({ provider }) => {
+const PremiumCountdown: React.FC<{ provider: Provider; isPremium: boolean; isTrial: boolean }> = ({ provider, isPremium, isTrial }) => {
   const [timeLeft, setTimeLeft] = useState<string>('');
 
   useEffect(() => {
@@ -75,14 +75,14 @@ const PremiumCountdown: React.FC<{ provider: Provider }> = ({ provider }) => {
     const timer = setInterval(calculateTimeLeft, 60000); // Update every minute
 
     return () => clearInterval(timer);
-  }, [provider.trial_end_at, provider.trial_days_left, provider.is_trial]);
+  }, [provider.trial_end_at, provider.trial_days_left, isTrial]);
 
-  if (!provider.is_premium_active) {
+  if (!isPremium) {
     return null;
   }
 
   // For trial users, show countdown
-  if (provider.is_trial) {
+  if (isTrial) {
     const isExpiringSoon = provider.trial_days_left <= 7;
     const isExpired = timeLeft === 'Expired';
 
@@ -123,6 +123,16 @@ const PremiumCountdown: React.FC<{ provider: Provider }> = ({ provider }) => {
 };
 
 export const ProviderCapabilities: React.FC<ProviderCapabilitiesProps> = ({ provider }) => {
+  // Compute plan-related values
+  const plan = provider.plan?.toUpperCase();
+  const planSource = provider.plan_source?.toUpperCase();
+
+  const isPremium =
+    (provider as any).is_premium_active ?? (plan === "PREMIUM");
+
+  const isTrial =
+    (provider as any).is_trial ?? (planSource === "TRIAL");
+
   return (
     <Card className="space-y-6">
       {/* Trust & Verification Status */}
@@ -158,13 +168,13 @@ export const ProviderCapabilities: React.FC<ProviderCapabilitiesProps> = ({ prov
           <div className="flex items-center justify-between">
             <span className="text-sm text-gray-600">Plan:</span>
             <Badge
-              label={provider.is_premium_active ? 'Premium Active' : 'Free Plan'}
-              variant={provider.is_premium_active ? 'success' : 'secondary'}
+              label={isPremium ? 'Premium Active' : 'Free Plan'}
+              variant={isPremium ? 'success' : 'secondary'}
             />
           </div>
 
-          {provider.is_premium_active && (
-            <PremiumCountdown provider={provider} />
+          {isPremium && (
+            <PremiumCountdown provider={provider} isPremium={isPremium} isTrial={isTrial} />
           )}
 
           <div className="flex items-center justify-between">

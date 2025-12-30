@@ -1,0 +1,91 @@
+{"users": [
+{
+  "localId": "8ZdAycr8S8coMGH6nmG8mMd90F13",
+  "email": "john@example.com",
+  "emailVerified": false,
+  "passwordHash": "mFOII07Tfp/jEGG9uP1CwHO7zozywuEcfdi0se+AdDyWgMpk5yEmb85Q+xDBOF5n4pHBOFY6JnDBEZaPsCZdCA==",
+  "salt": "/2g2Njz4AuKiXg==",
+  "lastSignedInAt": "1767033119205",
+  "createdAt": "1767033119205",
+  "providerUserInfo": []
+},
+{
+  "localId": "AOIAmv4hC3T8P9bzGEO6QeWHkVm2",
+  "email": "newtestuser@helpinghand.com",
+  "emailVerified": false,
+  "passwordHash": "5Saa1Jo06qIMKO8BEY3JXs+mB4vkfXJvsLRpMl4XiG6u7HDXP/hjj10YTTHDqkFozHdHp+K9Mmqcl1TdM4bPxg==",
+  "salt": "GdieDXUkvlPawQ==",
+  "lastSignedInAt": "1767017263296",
+  "createdAt": "1767017263296",
+  "providerUserInfo": []
+},
+{
+  "localId": "GdqX5g5kxGT7ojC2xNubIW7Ktbo2",
+  "email": "giovanebarnes@outlook.com",
+  "emailVerified": false,
+  "passwordHash": "t2mQwOamovJdKp0IyFsDyEQDH15j/Mq4DxK/0iYj0GihnjYB5Ema6D6yWgDSZ+Wve07GPqLuQ99506ae5C287Q==",
+  "salt": "tpTUF0Jj/YM34w==",
+  "lastSignedInAt": "1766987424168",
+  "createdAt": "1766987424168",
+  "providerUserInfo": []
+},
+{
+  "localId": "JbwppYjrdfQZaN7MxtYNoj1H3xj1",
+  "email": "testuser@helpinghand.com",
+  "emailVerified": false,
+  "passwordHash": "uMt1BrAmWURFSuwZ22QRQe76tOrj5p+/5KelCrSpjqi81OhCDyRu1TYdP3jDyba92Ej0iTBJRTg9AtZQDyeDcw==",
+  "salt": "M58XCkgMf/CW6w==",
+  "lastSignedInAt": "1767020250934",
+  "createdAt": "1767015910955",
+  "providerUserInfo": []
+},
+{
+  "localId": "LVuSpmtrieX0vbwV3dHVXY5CSRJ2",
+  "email": "ggiobar@hotmail.com",
+  "emailVerified": false,
+  "passwordHash": "w5wPmuYbLCvF2dQXfaDwhjuFp9Ccu9HYSssJxSg3qT04AB13mbrvB57+n0GvuCM5teE+610bMKUkwyhhSQxuRQ==",
+  "salt": "4osD605akhKVRA==",
+  "lastSignedInAt": "1767035554304",
+  "createdAt": "1767020055064",
+  "providerUserInfo": []
+},
+{
+  "localId": "e3cmEb123UY0wsF8TGkSstLbOo23",
+  "email": "curltestuser@helpinghand.com",
+  "emailVerified": false,
+  "passwordHash": "uGfmtbK0j/oK3IGJSswqMbHWhBg8grJwCdgnUr391L8uLfGI1+tcL5srOyR1D7rG5S43waIcTT6MnT18S3NSEA==",
+  "salt": "Yy6nRDkojrcF0A==",
+  "lastSignedInAt": "1767018591305",
+  "createdAt": "1767018591305",
+  "providerUserInfo": []
+},
+{
+  "localId": "gVMWmQgYo0hW5IBQIijR8nejD4I2",
+  "email": "test@helpinghand.com",
+  "emailVerified": false,
+  "passwordHash": "ceaORnJchVP7WBEO8BTQ1OHvKCfjHKSiG1cFmnCV6FDmiUINjFl1WiiqUjQRjWZiqeHbBZoFHBL7qFUPzS5bkA==",
+  "salt": "h04b18ikI+YIhw==",
+  "lastSignedInAt": "1767015732186",
+  "createdAt": "1767015732186",
+  "providerUserInfo": []
+},
+{
+  "localId": "jG5uvBXMF7exHYWnHf5zu6Q5TO52",
+  "email": "firebase@example.com",
+  "emailVerified": false,
+  "passwordHash": "WkmksY4qd0c2ouVpDqW4mIyDjYyTAOesGQU6qnSbVpXcrh8EE9FhvlB8nmRpMK9tnCGPxN/XCWYBCy2Uktqq8g==",
+  "salt": "fKuneFlrf98zrQ==",
+  "lastSignedInAt": "1767015660703",
+  "createdAt": "1767015660703",
+  "providerUserInfo": []
+},
+{
+  "localId": "lTeGcFRG8wbxm9yyW5UlGWCqJEf1",
+  "email": "newprovider@helpinghand.com",
+  "emailVerified": false,
+  "passwordHash": "Gem9aTApRYeI7VmnJ0ZBULQhiep/t6kJ5keIRnlrV0iSuqxZYsOK4bqGxX9xznBzCOCk6zX67LCnHq9MDbc8uw==",
+  "salt": "o0WHLSffTASH4A==",
+  "lastSignedInAt": "1767018918390",
+  "createdAt": "1767018918390",
+  "providerUserInfo": []
+}]}

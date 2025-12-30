@@ -16,6 +16,18 @@ export const AccountManagement: React.FC<AccountManagementProps> = ({
 }) => {
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
 
+  // Compute plan-related values
+  const plan = provider.plan?.toUpperCase();
+  const planSource = provider.plan_source?.toUpperCase();
+
+  const isPremium =
+    (provider as any).is_premium_active ?? (plan === "PREMIUM");
+
+  const isTrial =
+    (provider as any).is_trial ?? (planSource === "TRIAL");
+
+  const planLabel = isPremium ? (isTrial ? "Premium (Trial)" : "Premium Plan") : "Free Plan";
+
   const handleDeleteAccount = () => {
     if (window.confirm('Are you sure you want to delete your account? This action cannot be undone and will permanently remove all your data.')) {
       onDeleteAccount?.();
@@ -33,28 +45,20 @@ export const AccountManagement: React.FC<AccountManagementProps> = ({
         <div className="space-y-3">
           <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
             <div>
-              <p className="font-medium">{provider.is_premium_active ? 'Premium Plan' : 'Free Plan'}</p>
+              <p className="font-medium">{planLabel}</p>
               <p className="text-sm text-gray-600">
-                {provider.is_premium_active
+                {isPremium
                   ? 'You have access to all premium features'
                   : 'Upgrade to access premium features like higher visibility and emergency services'
                 }
               </p>
             </div>
-            {!provider.is_premium_active && (
+            {!isPremium && (
               <Button onClick={onUpgradePlan} variant="primary" size="sm">
                 Upgrade
               </Button>
             )}
           </div>
-
-          {provider.is_trial && (
-            <div className="p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
-              <p className="text-sm text-yellow-800">
-                <strong>Trial Active:</strong> {provider.trial_days_left} days remaining
-              </p>
-            </div>
-          )}
         </div>
       </div>
 

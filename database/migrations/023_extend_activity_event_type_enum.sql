@@ -1,0 +1,2 @@
+ALTER TYPE activity_event_type ADD VALUE IF NOT EXISTS 'LOGIN';
+ALTER TYPE activity_event_type ADD VALUE IF NOT EXISTS 'STATUS_UPDATE';

@@ -26,19 +26,19 @@ echo "📦 Building applications..."
 # Build the API
 cd apps/api
 npm run build
-cd ..
+cd ../..
 
 # Build the web app
 cd apps/web
 npm run build
-cd ..
+cd ../..
 
 echo "✅ Builds completed successfully"
 
 echo "🗄️  Setting up database..."
 cd apps/api
 node run-migrations.js
-cd ..
+cd ../..
 
 echo "🌐 Starting production servers..."
 
@@ -46,13 +46,13 @@ echo "🌐 Starting production servers..."
 cd apps/api
 NODE_ENV=production npm start &
 API_PID=$!
-cd ..
+cd ../..
 
 # Start web server (serving static files)
 cd apps/web
 npx serve -s dist -l $PORT &
 WEB_PID=$!
-cd ..
+cd ../..
 
 echo "🎉 Deployment complete!"
 echo "📊 API Server: http://localhost:$PORT"

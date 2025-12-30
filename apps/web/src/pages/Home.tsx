@@ -12,15 +12,13 @@ interface Provider {
   whatsapp?: string;
   email?: string;
   island: string;
-  profile: {
-    description?: string;
-  };
+  description?: string;
   status: string;
   last_active_at: string;
   lifecycle_status: string;
   is_premium_active: boolean;
   is_trial: boolean;
-  categories: string[];
+  categories: { id: number; name: string }[];
   badges: string[];
   contact_preference?: 'PHONE' | 'EMAIL' | 'BOTH';
 }
@@ -356,53 +354,44 @@ export const Home: React.FC = () => {
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         {providers.map(provider => (
-          <Card key={provider.id} className="hover:shadow-lg transition-shadow flex flex-col">
+          <Card key={provider.id} className="hover:shadow-lg transition-shadow h-full flex flex-col">
+            {/* Header */}
             <div className="flex justify-between items-start mb-3">
-              <h2 className="text-xl font-semibold">{provider.name}</h2>
+              <div className="flex-1 min-w-0">
+                <h2 className="text-xl font-semibold leading-tight">{provider.name}</h2>
+                <div className="mt-1 text-sm text-gray-600">{getIslandDisplayName(provider.island)}</div>
+                {provider.categories && provider.categories.length > 0 && (
+                  <div className="mt-1 text-sm text-gray-500">{provider.categories.map(c => c.name).join(', ')}</div>
+                )}
+              </div>
               {provider.lifecycle_status === 'INACTIVE' && (
                 <Badge label="Inactive" variant="secondary" />
               )}
             </div>
-            
-            <div className="mb-3">
-              <p className="text-gray-600">{getIslandDisplayName(provider.island)}</p>
-              {provider.categories && provider.categories.length > 0 && (
-                <p className="text-sm text-gray-500 mt-1">{provider.categories.join(', ')}</p>
-              )}
-            </div>
 
-            {provider.profile?.description && (
-              <div className="mb-3">
-                <p className="text-sm text-gray-700 line-clamp-2">
-                  {provider.profile.description.length > 100
-                    ? `${provider.profile.description.substring(0, 100)}...`
-                    : provider.profile.description}
-                </p>
-              </div>
+            {/* Description */}
+            {provider.description?.trim() && (
+              <p className="text-sm text-gray-700 line-clamp-2 min-h-[2.5rem] flex-1">
+                {provider.description}
+              </p>
             )}
 
-            <div className="mb-3">
-              <div className="flex flex-wrap gap-1 mb-2">
-                <Badge label={provider.status} variant={getAvailabilityColor(provider.status)} />
-                {provider.is_premium_active && (
-                  <Badge label={provider.is_trial ? "Trial" : "Premium"} variant="success" />
-                )}
-              </div>
-              
-              {provider.badges && provider.badges.length > 0 && (
+            {/* Footer - pinned to bottom */}
+            <div className="mt-auto pt-4">
+              <div className="flex items-center justify-between mb-3">
                 <div className="flex flex-wrap gap-1">
-                  {provider.badges.map(badge => (
-                    <Badge key={badge} label={badge} variant="success" />
-                  ))}
+                  <Badge label={provider.status} variant={getAvailabilityColor(provider.status)} />
+                  {provider.badges && provider.badges.length > 0 && (
+                    provider.badges.map(badge => (
+                      <Badge key={badge} label={badge} variant="success" />
+                    ))
+                  )}
                 </div>
-              )}
-            </div>
+                <span className="text-xs text-gray-500">
+                  Activity: {provider.last_active_at ? getHoursAgo(provider.last_active_at) : 'Never'}
+                </span>
+              </div>
 
-            <div className="mt-auto">
-              <p className="text-sm text-gray-500 mb-2">
-                Activity: {provider.last_active_at ? getHoursAgo(provider.last_active_at) : 'Never'}
-              </p>
-              
               <div className="flex flex-wrap gap-2">
                 {(provider.contact_preference === 'PHONE' || provider.contact_preference === 'BOTH') && (
                   <Button href={`tel:${provider.phone}`}>Call</Button>

@@ -1,15 +1,16 @@
 import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
-import { providerApi, Provider, Insights } from '../../services/providerApi';
+import { providerApi, Provider } from '../../services/providerApi';
 import { StatusButtons } from '../../components/provider/StatusButtons';
 import { LivePreviewCard } from '../../components/provider/LivePreviewCard';
 import { ProfileForm } from '../../components/provider/ProfileForm';
 import { ProviderCapabilities } from '../../components/provider/ProviderCapabilities';
 import { AccountManagement } from '../../components/provider/AccountManagement';
+import { API_BASE } from '../../constants';
+import { auth } from '../../services/firebase';
 
 const ProviderDashboard: React.FC = () => {
   const [provider, setProvider] = useState<Provider | null>(null);
-  const [insights, setInsights] = useState<Insights | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
@@ -20,12 +21,8 @@ const ProviderDashboard: React.FC = () => {
 
   const loadData = async () => {
     try {
-      const [providerData, insightsData] = await Promise.all([
-        providerApi.getMe(),
-        providerApi.getInsights('7d'),
-      ]);
+      const providerData = await providerApi.getMe();
       setProvider(providerData);
-      setInsights(insightsData);
       
       // Log login activity for verification tracking
       if (providerData) {
@@ -96,16 +93,22 @@ const ProviderDashboard: React.FC = () => {
   const handleRequestChange = async (field: 'name' | 'island', newValue: string, reason: string) => {
     if (!provider) return;
     try {
-      const API_BASE = `${window.location.protocol}//${window.location.hostname}:3000`;
+      const token = await auth.currentUser?.getIdToken();
+      const apiField = field === 'name' ? 'NAME' : 'LOCATION';
       const response = await fetch(`${API_BASE}/providers/${provider.id}/change-requests`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ field, requested_value: newValue, reason }),
+        headers: { 
+          'Content-Type': 'application/json',
+          ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+        },
+        body: JSON.stringify({ field: apiField, requested_value: newValue, reason }),
       });
 
       if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.error || 'Failed to submit change request');
+        const contentType = response.headers.get("content-type") || "";
+        const isJson = contentType.includes("application/json");
+        const errBody = isJson ? await response.json() : await response.text();
+        throw new Error(errBody.error || errBody || `Request failed (${response.status})`);
       }
 
       await response.json();
@@ -219,23 +222,6 @@ const ProviderDashboard: React.FC = () => {
             onDeleteAccount={handleDeleteAccount}
             onUpgradePlan={handleUpgradePlan}
           />
-        </div>
-
-        {/* Insights */}
-        <div className="bg-white shadow rounded-lg p-6">
-          <h2 className="text-xl font-semibold mb-4">Contact Insights (Last 7 Days)</h2>
-          {insights && (
-            <div className="grid grid-cols-2 gap-4">
-              <div className="text-center">
-                <p className="text-2xl font-bold">{insights.calls}</p>
-                <p className="text-sm text-gray-600">Calls</p>
-              </div>
-              <div className="text-center">
-                <p className="text-2xl font-bold">{insights.sms}</p>
-                <p className="text-sm text-gray-600">SMS</p>
-              </div>
-            </div>
-          )}
         </div>
       </main>
     </div>

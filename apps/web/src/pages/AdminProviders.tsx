@@ -4,6 +4,8 @@ import { Button } from '../components/Button';
 import { Badge } from '../components/Badge';
 import { AdminLayout } from '../components/AdminLayout';
 import { API_BASE } from '../constants';
+import { User } from 'firebase/auth';
+import { useAdminAuth } from '../hooks/useAdminAuth';
 
 interface Provider {
   id: number;
@@ -17,7 +19,19 @@ interface Provider {
   disputed_at: string | null;
 }
 
-const ADMIN_KEY = 'admin-secret'; // In real app, from env
+// Helper function for admin API calls with Firebase auth
+const adminFetch = async (user: User, url: string, options: RequestInit = {}) => {
+  const token = await user.getIdToken();
+
+  return fetch(url, {
+    ...options,
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${token}`,
+      ...options.headers,
+    },
+  });
+};
 
 const getIslandDisplayName = (islandCode: string) => {
   switch (islandCode) {
@@ -32,6 +46,7 @@ export const AdminProviders: React.FC = () => {
   const navigate = useNavigate();
   const [providers, setProviders] = useState<Provider[]>([]);
   const [loading, setLoading] = useState(true);
+  const { user, loading: authLoading } = useAdminAuth();
   const [filters, setFilters] = useState({
     island: '',
     categoryId: '',
@@ -43,7 +58,7 @@ export const AdminProviders: React.FC = () => {
   });
   const [availableCategories, setAvailableCategories] = useState<Array<{ id: number; name: string }>>([]);
 
-  const fetchProviders = useCallback(async () => {
+  const fetchProviders = useCallback(async (user: User) => {
     setLoading(true);
     try {
       const params = new URLSearchParams();
@@ -55,9 +70,7 @@ export const AdminProviders: React.FC = () => {
       if (filters.archived) params.append('archived', filters.archived);
       if (filters.disputed) params.append('disputed', filters.disputed);
 
-      const response = await fetch(`${API_BASE}/admin/providers?${params}`, {
-        headers: { 'X-ADMIN-KEY': ADMIN_KEY },
-      });
+      const response = await adminFetch(user, `${API_BASE}/admin/providers?${params}`);
       if (!response.ok) throw new Error('Failed to fetch');
       const data = await response.json();
       setProviders(data);
@@ -69,13 +82,10 @@ export const AdminProviders: React.FC = () => {
   }, [filters]);
 
   useEffect(() => {
-    if (!localStorage.getItem('admin_logged_in')) {
-      navigate('/admin/login');
-      return;
-    }
+    if (authLoading || !user) return;
     fetchCategories();
-    fetchProviders();
-  }, [filters, navigate, fetchProviders]);
+    fetchProviders(user);
+  }, [user, authLoading, filters, navigate, fetchProviders]);
 
   const fetchCategories = async () => {
     try {
@@ -90,63 +100,63 @@ export const AdminProviders: React.FC = () => {
   };
 
   const handleVerify = async (id: number) => {
+    if (!user) return;
     const provider = providers.find(p => p.id === id);
     const isCurrentlyVerified = provider?.badges?.includes('VERIFIED') || false;
     const verified = !isCurrentlyVerified;
 
     try {
-      await fetch(`${API_BASE}/admin/providers/${id}/verify`, {
+      await adminFetch(user, `${API_BASE}/admin/providers/${id}/verify`, {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json', 'X-ADMIN-KEY': ADMIN_KEY },
         body: JSON.stringify({ verified }),
       });
-      fetchProviders();
+      fetchProviders(user);
     } catch (err) {
       alert('Error verifying');
     }
   };
 
   const handleGovApprove = async (id: number) => {
+    if (!user) return;
     const provider = providers.find(p => p.id === id);
     const isCurrentlyApproved = provider?.badges?.includes('GOV_APPROVED') || false;
     const approved = !isCurrentlyApproved;
 
     try {
-      await fetch(`${API_BASE}/admin/providers/${id}/gov-approve`, {
+      await adminFetch(user, `${API_BASE}/admin/providers/${id}/gov-approve`, {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json', 'X-ADMIN-KEY': ADMIN_KEY },
         body: JSON.stringify({ approved }),
       });
-      fetchProviders();
+      fetchProviders(user);
     } catch (err) {
       alert('Error updating government approval');
     }
   };
 
   const handleArchive = async (id: number) => {
+    if (!user) return;
     try {
-      const response = await fetch(`${API_BASE}/admin/providers/${id}/archive`, {
+      const response = await adminFetch(user, `${API_BASE}/admin/providers/${id}/archive`, {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json', 'X-ADMIN-KEY': ADMIN_KEY },
       });
       if (!response.ok) throw new Error('Failed to update archive status');
-      fetchProviders();
+      fetchProviders(user);
     } catch (err) {
       alert('Error updating archive status');
     }
   };
 
   const handleDisputed = async (id: number, isDisputed: boolean) => {
+    if (!user) return;
     const notes = prompt('Notes:');
     if (notes !== null) {
       try {
-        const response = await fetch(`${API_BASE}/admin/providers/${id}/disputed`, {
+        const response = await adminFetch(user, `${API_BASE}/admin/providers/${id}/disputed`, {
           method: 'PATCH',
-          headers: { 'Content-Type': 'application/json', 'X-ADMIN-KEY': ADMIN_KEY },
           body: JSON.stringify({ isDisputed, notes }),
         });
         if (!response.ok) throw new Error('Failed to update disputed status');
-        fetchProviders();
+        fetchProviders(user);
       } catch (err) {
         alert('Error updating disputed status');
       }
@@ -164,6 +174,14 @@ export const AdminProviders: React.FC = () => {
           <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
           <span className="ml-3 text-gray-600">Loading providers...</span>
         </div>
+      </AdminLayout>
+    );
+  }
+
+  if (authLoading) {
+    return (
+      <AdminLayout title="Providers">
+        <div className="p-6">Loading...</div>
       </AdminLayout>
     );
   }

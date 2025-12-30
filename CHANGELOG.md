@@ -234,6 +234,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Jest Configuration**: Proper test path exclusion to prevent duplicate execution
 - **Database Transactions**: Improved test isolation with proper rollback
 
+### Fixed
+- **Admin Authentication Race Condition**: Resolved Firebase auth hydration issues on page refresh
+  - Implemented shared `useAdminAuth` hook for consistent auth state management across all admin pages
+  - Added loading states during Firebase auth initialization to prevent premature API calls
+  - Eliminated "Error fetching providers" popups on admin page refreshes
+  - Ensured admin API requests only execute after authenticated user is available
+
+### Improved
+- **Provider Card Layout**: Enhanced visual presentation with structured information hierarchy
+  - Improved card layout with header, description, and footer sections
+  - Added provider descriptions for better service understanding
+  - Removed trial badges from public view for cleaner interface
+  - Maintained premium badges for active premium providers
+
+### Security
+- **Debug Log Cleanup**: Removed development console logging from production builds
+  - Cleaned up plan debugging logs from ProviderCapabilities and AccountManagement components
+  - Ensured no sensitive information is logged in production environment
+
+### Technical Improvements
+- **Admin Page Architecture**: Unified authentication handling across admin interface
+  - Created reusable authentication hook for admin pages
+  - Improved error handling and user experience during auth state changes
+  - Maintained separation between admin and public authentication flows
+
 ## [1.0.0] - 2025-12-25
 
 ### Added

@@ -2,6 +2,9 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { Button } from '../components/Button';
 import { Badge } from '../components/Badge';
 import { AdminLayout } from '../components/AdminLayout';
+import { API_BASE } from '../constants';
+import { User } from 'firebase/auth';
+import { useAdminAuth } from '../hooks/useAdminAuth';
 
 interface Report {
   id: number;
@@ -16,27 +19,37 @@ interface Report {
   updated_at: string;
 }
 
-const API_BASE = `${window.location.protocol}//${window.location.hostname}:3000`;
-const ADMIN_KEY = 'admin-secret'; // In real app, from env
-
 export const AdminReports: React.FC = () => {
   const [reports, setReports] = useState<Report[]>([]);
   const [loading, setLoading] = useState(true);
+  const { user, loading: authLoading } = useAdminAuth();
+
+  // Helper function for admin API calls with Firebase auth
+  const adminFetch = async (user: User, url: string, options: RequestInit = {}) => {
+    const token = await user.getIdToken();
+
+    return fetch(url, {
+      ...options,
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`,
+        ...options.headers,
+      },
+    });
+  };
   const [filters, setFilters] = useState({
     status: '',
     type: '',
   });
 
-  const fetchReports = useCallback(async () => {
+  const fetchReports = useCallback(async (user: User) => {
     setLoading(true);
     try {
       const params = new URLSearchParams();
       if (filters.status) params.append('status', filters.status);
       if (filters.type) params.append('type', filters.type);
 
-      const response = await fetch(`${API_BASE}/admin/reports?${params}`, {
-        headers: { 'X-ADMIN-KEY': ADMIN_KEY },
-      });
+      const response = await adminFetch(user, `${API_BASE}/admin/reports?${params}`);
       if (!response.ok) throw new Error('Failed to fetch');
       const data = await response.json();
       setReports(data);
@@ -48,22 +61,19 @@ export const AdminReports: React.FC = () => {
   }, [filters]);
 
   useEffect(() => {
-    if (!localStorage.getItem('admin_logged_in')) {
-      window.location.href = '/admin/login';
-      return;
-    }
-    fetchReports();
-  }, [filters, fetchReports]);
+    if (authLoading || !user) return;
+    fetchReports(user);
+  }, [user, authLoading, filters, fetchReports]);
 
   const handleArchive = async (providerId: number) => {
+    if (!user) return;
     if (confirm('Archive this provider?')) {
       try {
-        await fetch(`${API_BASE}/admin/providers/${providerId}/archive`, {
+        await adminFetch(user, `${API_BASE}/admin/providers/${providerId}/archive`, {
           method: 'PUT',
-          headers: { 'Content-Type': 'application/json', 'X-ADMIN-KEY': ADMIN_KEY },
         });
         alert('Provider archived');
-        fetchReports(); // Refresh
+        fetchReports(user); // Refresh
       } catch (err) {
         alert('Error archiving');
       }
@@ -71,15 +81,15 @@ export const AdminReports: React.FC = () => {
   };
 
   const handleStatusChange = async (reportId: number, newStatus: string) => {
+    if (!user) return;
     const adminNotes = prompt('Admin notes (optional):');
     if (adminNotes !== null) {
       try {
-        await fetch(`${API_BASE}/admin/reports/${reportId}`, {
+        await adminFetch(user, `${API_BASE}/admin/reports/${reportId}`, {
           method: 'PATCH',
-          headers: { 'Content-Type': 'application/json', 'X-ADMIN-KEY': ADMIN_KEY },
           body: JSON.stringify({ status: newStatus, adminNotes }),
         });
-        fetchReports(); // Refresh
+        fetchReports(user); // Refresh
       } catch (err) {
         alert('Error updating report status');
       }
@@ -89,6 +99,14 @@ export const AdminReports: React.FC = () => {
   const handleFilterChange = (key: string, value: string) => {
     setFilters(prev => ({ ...prev, [key]: value }));
   };
+
+  if (authLoading) {
+    return (
+      <AdminLayout title="Reports">
+        <div className="p-6">Loading...</div>
+      </AdminLayout>
+    );
+  }
 
   if (loading) {
     return (

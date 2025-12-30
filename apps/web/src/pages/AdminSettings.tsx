@@ -1,9 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { Button } from '../components/Button';
 import { AdminLayout } from '../components/AdminLayout';
-
-const API_BASE = `${window.location.protocol}//${window.location.hostname}:3000`;
-const ADMIN_KEY = 'admin-secret'; // In real app, from env
+import { API_BASE } from '../constants';
+import { User } from 'firebase/auth';
+import { useAdminAuth } from '../hooks/useAdminAuth';
 
 export const AdminSettings: React.FC = () => {
   const [emergencyMode, setEmergencyMode] = useState({ enabled: false });
@@ -12,15 +12,27 @@ export const AdminSettings: React.FC = () => {
     checks: Record<string, { status: string; details: unknown }>;
   } | null>(null);
   const [loading, setLoading] = useState(true);
+  const { user, loading: authLoading } = useAdminAuth();
+
+  // Helper function for admin API calls with Firebase auth
+  const adminFetch = async (user: User, url: string, options: RequestInit = {}) => {
+    const token = await user.getIdToken();
+
+    return fetch(url, {
+      ...options,
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`,
+        ...options.headers,
+      },
+    });
+  };
 
   useEffect(() => {
-    if (!localStorage.getItem('admin_logged_in')) {
-      window.location.href = '/admin/login';
-      return;
-    }
+    if (authLoading || !user) return;
     fetchEmergencyMode();
     fetchSystemHealth();
-  }, []);
+  }, [user, authLoading]);
 
   const fetchEmergencyMode = async () => {
     try {
@@ -55,12 +67,12 @@ export const AdminSettings: React.FC = () => {
   };
 
   const handleEmergencyModeToggle = async () => {
+    if (!user) return;
     const notes = prompt('Notes for this change:');
     if (notes !== null) {
       try {
-        const response = await fetch(`${API_BASE}/admin/settings/emergency-mode`, {
+        const response = await adminFetch(user, `${API_BASE}/admin/settings/emergency-mode`, {
           method: 'PATCH',
-          headers: { 'Content-Type': 'application/json', 'X-ADMIN-KEY': ADMIN_KEY },
           body: JSON.stringify({ enabled: !emergencyMode.enabled, notes }),
         });
         if (!response.ok) throw new Error('Failed to update');
@@ -71,6 +83,14 @@ export const AdminSettings: React.FC = () => {
       }
     }
   };
+
+  if (authLoading) {
+    return (
+      <AdminLayout title="Settings">
+        <div className="p-6">Loading...</div>
+      </AdminLayout>
+    );
+  }
 
   if (loading || !systemHealth) {
     return (

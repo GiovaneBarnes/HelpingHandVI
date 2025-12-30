@@ -14,9 +14,9 @@ interface ProfileFormProps {
 
 export const ProfileForm: React.FC<ProfileFormProps> = ({ provider, onSave, onRequestChange }) => {
   const [phone, setPhone] = useState(provider.phone);
-  const [description, setDescription] = useState(provider.description);
+  const [description, setDescription] = useState(provider.description || '');
   const [contactPreference, setContactPreference] = useState(provider.contact_preference || 'BOTH');
-  const [selectedCategories, setSelectedCategories] = useState<number[]>(provider.categories.map(c => c.id));
+  const [selectedCategories, setSelectedCategories] = useState<number[]>(provider.categories?.map(c => c.id) || []);
   const [availableCategories, setAvailableCategories] = useState<Category[]>([]);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState('');
@@ -26,7 +26,7 @@ export const ProfileForm: React.FC<ProfileFormProps> = ({ provider, onSave, onRe
   const [requestReason, setRequestReason] = useState('');
   const [requesting, setRequesting] = useState(false);
 
-  const API_BASE = `${window.location.protocol}//${window.location.hostname}:3000`;
+  const API_BASE = '/api';
 
   useEffect(() => {
     const fetchCategories = async () => {
@@ -46,20 +46,11 @@ export const ProfileForm: React.FC<ProfileFormProps> = ({ provider, onSave, onRe
 
   // Update form fields when provider prop changes
   useEffect(() => {
-    setSelectedCategories(provider.categories.map(c => c.id));
-  }, [provider.categories]);
-
-  useEffect(() => {
-    setPhone(provider.phone);
-  }, [provider.phone]);
-
-  useEffect(() => {
-    setDescription(provider.description);
-  }, [provider.description]);
-
-  useEffect(() => {
+    setPhone(provider.phone || '');
+    setDescription(provider.description || '');
     setContactPreference(provider.contact_preference || 'BOTH');
-  }, [provider.contact_preference]);
+    setSelectedCategories(provider.categories?.map(c => c.id) || []);
+  }, [provider]);
 
   const handleSave = async () => {
     setSaving(true);

@@ -3,6 +3,9 @@ import { useNavigate } from 'react-router-dom';
 import { Button } from '../components/Button';
 import { Badge } from '../components/Badge';
 import { AdminLayout } from '../components/AdminLayout';
+import { API_BASE } from '../constants';
+import { User } from 'firebase/auth';
+import { useAdminAuth } from '../hooks/useAdminAuth';
 
 interface ChangeRequest {
   id: number;
@@ -24,14 +27,26 @@ export const AdminRequests: React.FC = () => {
   const [allRequests, setAllRequests] = useState<ChangeRequest[]>([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<'all' | 'pending' | 'approved' | 'rejected'>('pending');
+  const { user, loading: authLoading } = useAdminAuth();
+
+  // Helper function for admin API calls with Firebase auth
+  const adminFetch = async (user: User, url: string, options: RequestInit = {}) => {
+    const token = await user.getIdToken();
+
+    return fetch(url, {
+      ...options,
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`,
+        ...options.headers,
+      },
+    });
+  };
 
   useEffect(() => {
-    if (!localStorage.getItem('admin_logged_in')) {
-      navigate('/admin/login');
-      return;
-    }
-    fetchAllRequests();
-  }, [navigate]);
+    if (authLoading || !user) return;
+    fetchAllRequests(user);
+  }, [user, authLoading, navigate]);
 
   useEffect(() => {
     // Update filtered requests when filter changes or all requests change
@@ -39,14 +54,9 @@ export const AdminRequests: React.FC = () => {
     setRequests(filtered);
   }, [filter, allRequests]);
 
-  const fetchAllRequests = async () => {
+  const fetchAllRequests = async (user: User) => {
     try {
-      const API_BASE = `${window.location.protocol}//${window.location.hostname}:3000`;
-      const ADMIN_KEY = 'admin-secret'; // In real app, from env
-
-      const response = await fetch(`${API_BASE}/admin/change-requests?status=`, {
-        headers: { 'X-ADMIN-KEY': ADMIN_KEY },
-      });
+      const response = await adminFetch(user, `${API_BASE}/admin/change-requests?status=`);
 
       if (!response.ok) {
         throw new Error('Failed to fetch requests');
@@ -63,16 +73,10 @@ export const AdminRequests: React.FC = () => {
   };
 
   const handleApprove = async (requestId: number) => {
+    if (!user) return;
     try {
-      const API_BASE = `${window.location.protocol}//${window.location.hostname}:3000`;
-      const ADMIN_KEY = 'admin-secret'; // In real app, from env
-
-      const response = await fetch(`${API_BASE}/admin/change-requests/${requestId}`, {
+      const response = await adminFetch(user, `${API_BASE}/admin/change-requests/${requestId}`, {
         method: 'PATCH',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-ADMIN-KEY': ADMIN_KEY
-        },
         body: JSON.stringify({ action: 'approve' }),
       });
 
@@ -82,7 +86,7 @@ export const AdminRequests: React.FC = () => {
       }
 
       // Refresh the requests list
-      await fetchAllRequests();
+      await fetchAllRequests(user);
     } catch (error) {
       console.error('Failed to approve request:', error);
       alert('Failed to approve request');
@@ -90,19 +94,13 @@ export const AdminRequests: React.FC = () => {
   };
 
   const handleReject = async (requestId: number) => {
+    if (!user) return;
     try {
-      const API_BASE = `${window.location.protocol}//${window.location.hostname}:3000`;
-      const ADMIN_KEY = 'admin-secret'; // In real app, from env
-
       const adminNotes = prompt('Optional notes for rejection:');
       if (adminNotes === null) return; // User cancelled
 
-      const response = await fetch(`${API_BASE}/admin/change-requests/${requestId}`, {
+      const response = await adminFetch(user, `${API_BASE}/admin/change-requests/${requestId}`, {
         method: 'PATCH',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-ADMIN-KEY': ADMIN_KEY
-        },
         body: JSON.stringify({ action: 'reject', admin_notes: adminNotes }),
       });
 
@@ -112,7 +110,7 @@ export const AdminRequests: React.FC = () => {
       }
 
       // Refresh the requests list
-      await fetchAllRequests();
+      await fetchAllRequests(user);
     } catch (error) {
       console.error('Failed to reject request:', error);
       alert('Failed to reject request');
@@ -129,6 +127,14 @@ export const AdminRequests: React.FC = () => {
       default: return <Badge label={status} variant="secondary" />;
     }
   };
+
+  if (authLoading) {
+    return (
+      <AdminLayout title="Requests">
+        <div className="p-6">Loading...</div>
+      </AdminLayout>
+    );
+  }
 
   if (loading) {
     return (

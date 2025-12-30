@@ -1,5 +1,5 @@
 -- Seed initial areas (islands and neighborhoods)
-INSERT INTO areas (island, neighborhood) VALUES
+INSERT INTO areas (island, name) VALUES
 -- St. Thomas (STT)
 ('STT', 'Charlotte Amalie'),
 ('STT', 'East End'),
@@ -14,4 +14,5 @@ INSERT INTO areas (island, neighborhood) VALUES
 -- St. Croix (STX)
 ('STX', 'Christiansted'),
 ('STX', 'Frederiksted'),
-('STX', 'East End');
+('STX', 'East End')
+ON CONFLICT (island, name) DO NOTHING;
